@@ -56,7 +56,11 @@ def decide(tx: dict) -> dict:
     if to.lower() in TRUSTED_ADDRESSES and amount <= TRUSTED_AUTO_LIMIT:
         return _verdict("APPROVE", "rules", "trusted recipient within auto-limit")
 
-    return _llm_judgment(tx)
+    try:
+        return _llm_judgment(tx)
+    except Exception as exc:
+        # Fail closed: an LLM outage must never approve a transfer.
+        return _verdict("DENY", "rules", f"LLM judgment unavailable, denying by default ({type(exc).__name__})")
 
 
 def _llm_judgment(tx: dict) -> dict:
@@ -76,6 +80,8 @@ def _llm_judgment(tx: dict) -> dict:
         output_config={"format": {"type": "json_schema", "schema": LLM_SCHEMA}},
         messages=[{"role": "user", "content": json.dumps(tx)}],
     )
+    if response.stop_reason == "refusal":
+        return _verdict("DENY", "llm", "judgment layer declined to evaluate this request")
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
     return _verdict(data["action"], "llm", data["reason"])
