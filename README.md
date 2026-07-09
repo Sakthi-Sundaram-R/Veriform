@@ -81,6 +81,20 @@ docker compose up
 >   - /var/run/dstack.sock:/var/run/dstack.sock
 > ```
 
+### Windows / no Docker? Use the dev shim
+
+`phala simulator start` doesn't support Windows yet. [dev-sim/sim.py](dev-sim/sim.py) speaks the same dstack wire protocol (clearly labeled NOT-A-TEE) so the unmodified agent runs anywhere:
+
+```bash
+pip install fastapi uvicorn httpx eth-account dstack-sdk anthropic
+
+# four terminals (or background jobs):
+uvicorn sim:app --port 8090 --app-dir dev-sim
+DSTACK_SIMULATOR_ENDPOINT=http://localhost:8090 uvicorn app.main:app --port 8001 --app-dir agent
+uvicorn app.main:app --port 8002 --app-dir evil-agent
+uvicorn app.main:app --port 3000 --app-dir verifier
+```
+
 ### Deploy to a real TEE
 
 Same container, real Intel TDX silicon:
