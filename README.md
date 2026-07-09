@@ -107,9 +107,9 @@ Point the verifier at the deployed URL — the ✅ is now backed by real hardwar
 ## Roadmap
 
 - [x] Problem statement & architecture
-- [ ] Agent container: decision → hash → quote → signature
-- [ ] Verifier UI with real quote verification (✅/❌)
-- [ ] Tamper demo: evil container + toggle
+- [x] Agent container: decision → hash → quote → signature
+- [x] Verifier UI with receipt verification (✅/❌)
+- [x] Tamper demo: evil container + toggle
 - [ ] Deploy to real TDX on Phala Cloud
 - [ ] Stretch: on-chain attested-key registry
 - [ ] Stretch: multi-vendor attestation (require agreement across Intel/AMD/Nvidia roots)

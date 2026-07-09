@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veriform — Verify the Agent</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131824; --border: #232b3d;
+    --text: #e6e9f0; --muted: #8b93a7;
+    --green: #2ecc71; --red: #e74c3c; --amber: #f1c40f; --accent: #5b8cff;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 40px 16px;
+  }
+  h1 { font-size: 28px; letter-spacing: 1px; }
+  h1 span { color: var(--accent); }
+  .tag { color: var(--muted); margin: 6px 0 28px; font-size: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; width: 100%; max-width: 640px; margin-bottom: 20px;
+  }
+  .toggle { display: flex; gap: 10px; margin-bottom: 18px; }
+  .toggle button {
+    flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 15px; cursor: pointer;
+    transition: all .15s;
+  }
+  .toggle button.active-honest { background: #14311f; border-color: var(--green); color: var(--green); }
+  .toggle button.active-evil { background: #3a1512; border-color: var(--red); color: var(--red); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .5px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: #0e1320; color: var(--text); font-size: 14px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  #ask {
+    width: 100%; margin-top: 20px; padding: 14px; font-size: 16px; font-weight: 600;
+    border: none; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer;
+  }
+  #ask:disabled { opacity: .5; cursor: wait; }
+  #result { display: none; text-align: center; }
+  #verdict-icon { font-size: 84px; line-height: 1; }
+  #verdict-text { font-size: 26px; font-weight: 700; margin: 10px 0 2px; }
+  #decision-line { color: var(--muted); margin-bottom: 18px; }
+  .verified #verdict-text { color: var(--green); }
+  .rejected #verdict-text { color: var(--red); }
+  .checks { text-align: left; border-top: 1px solid var(--border); padding-top: 14px; }
+  .check { display: flex; gap: 10px; padding: 7px 0; font-size: 14px; align-items: baseline; }
+  .check .mark { width: 20px; flex-shrink: 0; }
+  .check .name { font-weight: 600; min-width: 150px; }
+  .check .detail { color: var(--muted); }
+  .pass .mark { color: var(--green); } .fail .mark { color: var(--red); } .skip .mark { color: var(--amber); }
+  #error { display: none; color: var(--red); text-align: center; }
+</style>
+</head>
+<body>
+  <h1>VERI<span>FORM</span></h1>
+  <p class="tag">proof, not blind trust — verify the agent's decision in seconds</p>
+
+  <div class="card">
+    <div class="toggle">
+      <button id="btn-honest" class="active-honest">🔒 Honest agent (in enclave)</button>
+      <button id="btn-evil">💀 Evil agent (tampered)</button>
+    </div>
+    <label>Recipient address</label>
+    <input id="to" value="0x1111111111111111111111111111111111111111">
+    <div class="row">
+      <div><label>Amount</label><input id="amount" type="number" step="0.01" value="0.5"></div>
+      <div><label>Token</label><input id="token" value="ETH"></div>
+    </div>
+    <label>Reason</label>
+    <input id="reason" value="pay freelancer invoice #12">
+    <button id="ask">Ask Agent → Verify Receipt</button>
+  </div>
+
+  <div class="card" id="result">
+    <div id="verdict-icon"></div>
+    <div id="verdict-text"></div>
+    <div id="decision-line"></div>
+    <div class="checks" id="checks"></div>
+  </div>
+
+  <div class="card" id="error"></div>
+
+<script>
+  let agent = "honest";
+  const $ = (id) => document.getElementById(id);
+
+  $("btn-honest").onclick = () => setAgent("honest");
+  $("btn-evil").onclick = () => setAgent("evil");
+  function setAgent(a) {
+    agent = a;
+    $("btn-honest").className = a === "honest" ? "active-honest" : "";
+    $("btn-evil").className = a === "evil" ? "active-evil" : "";
+  }
+
+  $("ask").onclick = async () => {
+    $("ask").disabled = true;
+    $("result").style.display = "none";
+    $("error").style.display = "none";
+    try {
+      const resp = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent,
+          to: $("to").value,
+          amount: parseFloat($("amount").value),
+          token: $("token").value,
+          reason: $("reason").value,
+        }),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+      render(await resp.json());
+    } catch (e) {
+      $("error").textContent = "⚠ " + e.message;
+      $("error").style.display = "block";
+    } finally {
+      $("ask").disabled = false;
+    }
+  };
+
+  function render(data) {
+    const v = data.verification;
+    const p = data.receipt.payload || {};
+    $("result").className = "card " + (v.verified ? "verified" : "rejected");
+    $("verdict-icon").textContent = v.verified ? "✅" : "❌";
+    $("verdict-text").textContent = v.verified
+      ? "VERIFIED — genuine unaltered enclave"
+      : "REJECTED — receipt failed verification";
+    $("decision-line").textContent =
+      `agent said: ${p.action || "?"} (${p.notes || ""})`;
+    $("checks").innerHTML = v.checks.map((c) => {
+      const cls = c.passed === true ? "pass" : c.passed === false ? "fail" : "skip";
+      const mark = c.passed === true ? "✔" : c.passed === false ? "✘" : "○";
+      return `<div class="check ${cls}"><span class="mark">${mark}</span>` +
+             `<span class="name">${c.name}</span><span class="detail">${c.detail}</span></div>`;
+    }).join("");
+    $("result").style.display = "block";
+  }
+</script>
+</body>
+</html>

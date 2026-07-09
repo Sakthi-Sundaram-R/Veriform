@@ -1,0 +1,58 @@
+"""Veriform verifier — asks an agent for a decision, verifies the receipt,
+and serves the demo UI. Runs OUTSIDE the enclave: it trusts nothing but math.
+"""
+
+import os
+
+import httpx
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from .verify import verify_receipt
+
+app = FastAPI(title="Veriform Verifier")
+
+AGENT_URLS = {
+    "honest": os.environ.get("AGENT_URL", "http://localhost:8001"),
+    "evil": os.environ.get("EVIL_AGENT_URL", "http://localhost:8002"),
+}
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+
+
+class AskRequest(BaseModel):
+    agent: str  # "honest" | "evil"
+    to: str
+    amount: float
+    token: str = "ETH"
+    reason: str = ""
+
+
+@app.get("/")
+def index():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.post("/ask")
+def ask(req: AskRequest):
+    base_url = AGENT_URLS.get(req.agent)
+    if not base_url:
+        raise HTTPException(status_code=400, detail=f"unknown agent '{req.agent}'")
+
+    tx = {"to": req.to, "amount": req.amount, "token": req.token, "reason": req.reason}
+    try:
+        resp = httpx.post(f"{base_url}/decide", json=tx, timeout=60)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"agent unreachable: {exc}")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"agent error: {resp.text[:300]}")
+
+    receipt = resp.json()
+    verification = verify_receipt(
+        payload=receipt.get("payload", {}),
+        address=receipt.get("address", ""),
+        signature=receipt.get("signature", ""),
+        quote=receipt.get("quote"),
+    )
+    return {"agent": req.agent, "receipt": receipt, "verification": verification}

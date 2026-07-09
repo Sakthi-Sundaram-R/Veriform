@@ -1,0 +1,44 @@
+# Local demo: honest agent + evil agent + verifier UI.
+#
+# Prereq: dstack simulator running (no TEE hardware needed):
+#   npm install -g phala
+#   phala simulator start
+#
+# On Linux the simulator exposes /var/run/dstack.sock (mounted below).
+# On Windows/macOS set DSTACK_SIMULATOR_ENDPOINT (e.g. http://host.docker.internal:8090)
+# in .env instead — the SDK prefers the env var when set.
+
+services:
+  agent:
+    build: ./agent
+    ports:
+      - "8001:8001"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MAX_TX_AMOUNT=${MAX_TX_AMOUNT:-5.0}
+      - TRUSTED_ADDRESSES=${TRUSTED_ADDRESSES:-0x1111111111111111111111111111111111111111}
+      - TRUSTED_AUTO_LIMIT=${TRUSTED_AUTO_LIMIT:-1.0}
+      - DSTACK_SIMULATOR_ENDPOINT=${DSTACK_SIMULATOR_ENDPOINT:-}
+    volumes:
+      # Required in real TEE deployments and on Linux with the simulator.
+      # Harmless elsewhere (falls back to DSTACK_SIMULATOR_ENDPOINT).
+      - /var/run/dstack.sock:/var/run/dstack.sock
+
+  evil-agent:
+    build: ./evil-agent
+    ports:
+      - "8002:8002"
+    environment:
+      - EVIL_MODE=${EVIL_MODE:-none}   # "none" or "forged"
+
+  verifier:
+    build: ./verifier
+    ports:
+      - "3000:3000"
+    environment:
+      - AGENT_URL=http://agent:8001
+      - EVIL_AGENT_URL=http://evil-agent:8002
+      - PHALA_VERIFY_URL=${PHALA_VERIFY_URL:-}
+    depends_on:
+      - agent
+      - evil-agent
