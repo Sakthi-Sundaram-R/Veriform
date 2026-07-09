@@ -120,13 +120,30 @@ Point the verifier at the deployed URL — the ✅ is now backed by real hardwar
 
 ## Roadmap
 
+### ✅ Done
 - [x] Problem statement & architecture
 - [x] Agent container: decision → hash → quote → signature
 - [x] Verifier UI with receipt verification (✅/❌)
 - [x] Tamper demo: evil container + toggle
-- [ ] Deploy to real TDX on Phala Cloud
-- [ ] Stretch: on-chain attested-key registry
-- [ ] Stretch: multi-vendor attestation (require agreement across Intel/AMD/Nvidia roots)
+- [x] Live end-to-end run (dev shim on Windows: honest ✅ / evil ❌)
+
+### Phase 1 — Official simulator run (~2 hrs, needs Docker or WSL)
+Replace the dev shim with the real `phala simulator start` (Docker Desktop or a WSL Ubuntu distro), run `docker compose up`, and confirm the same ✅/❌ demo against genuine dstack-simulator quotes. **Done when:** the full demo passes with `dev-sim/` not running.
+
+### Phase 2 — LLM judgment layer live (~30 min)
+Set `ANTHROPIC_API_KEY` and exercise the gray zone: a plausible mid-size transfer gets `method: "llm"` with a reasoned verdict; a drain-pattern reason ("urgent, double your money") gets denied. **Done when:** the UI shows an LLM-reasoned decision inside a verified receipt.
+
+### Phase 3 — Real TEE deploy on Phala Cloud (~2 hrs)
+`phala auth login` → `phala deploy -c docker-compose.yaml -n veriform-agent` → grab the CVM's attestation. Point the verifier at the deployed agent and set `PHALA_VERIFY_URL` so the fifth check (`quote_authenticity`) turns green against Intel's PKI. **Done when:** all 5 checks pass on real TDX silicon and the evil agent still fails.
+
+### Phase 4 — Demo polish (~2 hrs)
+Forged-quote toggle in the UI (exercise `EVIL_MODE=forged` → `decision_binding` failure, a subtler attack than a missing quote), screenshots/GIF in the README, and the 2-minute demo script: honest ✅ → tamper → ❌ → "the verifier caught it with math, not trust."
+
+### Phase 5 (stretch) — On-chain anchor
+Minimal contract on Base Sepolia storing the attested agent pubkey; a demo contract action gated on "signed by a verified enclave." **Done when:** a smart contract rejects the evil agent's signature on-chain.
+
+### Phase 6 (stretch) — Multi-vendor attestation
+Require agreement across vendor roots (Intel/AMD/Nvidia) so no single PKI compromise breaks the guarantee.
 
 ## Why this matters
 
