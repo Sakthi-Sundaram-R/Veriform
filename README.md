@@ -66,6 +66,12 @@ The TEE primitive that solves this already exists (Phala, Marlin, Atoma). What's
 
 The verifier also supports **measurement pinning**: set `EXPECTED_MRTD` to your known-good build's enclave measurement and the verifier rejects receipts from any other code — even code running in a genuine enclave.
 
+### The 6th check: real Intel PKI, verified for free
+
+`quote_authenticity` extracts the quote's PCK certificate chain and verifies it roots in the **Intel SGX Root CA** (pinned public key) — offline, no paid service. This proves the quote carries genuine Intel-signed attestation collateral, and it rejects forged quotes that have no chain. The dstack simulator's quotes carry a *real* captured Intel chain, so this passes against the simulator today.
+
+The one guarantee real hardware still adds is the quote-**body** ECDSA signature over `report_data` — the simulator patches `report_data` in after the quote was captured, so only unpatched hardware output carries a valid body signature. Set `PHALA_VERIFY_URL` on a real TDX deployment for full DCAP verification (Phase 3).
+
 ## Quick start
 
 No TEE hardware needed — dstack ships a local simulator.

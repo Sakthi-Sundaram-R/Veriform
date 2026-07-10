@@ -6,6 +6,7 @@ no hardware chain (the authenticity check is out of scope locally).
 """
 
 import secrets
+from pathlib import Path
 
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -13,6 +14,13 @@ from eth_account.messages import encode_defunct
 from conftest import load_module
 
 V = load_module("veriform_verify", "verifier/app/verify.py")
+
+# Real Intel PCK chain (from the official simulator) so synthetic quotes pass
+# the authenticity check; these tests exercise binding/signature/MRTD.
+_FIXTURE = bytes.fromhex(
+    (Path(__file__).parent / "fixtures" / "official_sim_quote.hex").read_text().strip()
+)
+_CHAIN = _FIXTURE[_FIXTURE.find(b"-----BEGIN CERTIFICATE-----"):]
 
 
 PAYLOAD = {
@@ -37,6 +45,7 @@ def make_receipt(payload, mrtd=b"\x00" * 48):
     quote = bytearray(700)
     quote[V.MRTD_OFFSET:V.MRTD_END] = mrtd
     quote[V.REPORT_DATA_OFFSET:V.REPORT_DATA_END] = report_data
+    quote += _CHAIN  # append the real Intel chain so authenticity passes
     sig = acct.sign_message(encode_defunct(V.canonical_bytes(payload))).signature.hex()
     return acct, sig, bytes(quote).hex()
 

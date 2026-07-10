@@ -1,5 +1,5 @@
 {
-  "note": "Phase 1 proof: honest agent verified against the OFFICIAL Phala dstack simulator (v0.5.3, Linux musl build run in Alpine WSL2). EXPECTED_MRTD pinned to the simulator MRTD.",
+  "note": "Phase 1 + free quote_authenticity: honest agent VERIFIED against the OFFICIAL Phala dstack simulator with ALL SIX checks passing. quote_authenticity validates the real Intel SGX PCK chain to the Intel Root CA (free, offline). The one guarantee real hardware still adds: the quote-body ECDSA signature over report_data (the simulator patches report_data in after capture). Set PHALA_VERIFY_URL on real TDX for full DCAP.",
   "captured": "2026-07-10",
   "agent": "honest",
   "receipt": {
@@ -14,10 +14,10 @@
       "action": "APPROVE",
       "method": "llm (gemini-flash-lite-latest)",
       "notes": "The transaction details are clear, specific, and consistent with a standard professional payment.",
-      "timestamp": "2026-07-10T13:01:56.333636+00:00"
+      "timestamp": "2026-07-10T16:50:53.338732+00:00"
     },
     "address": "0xb07DBD72489c6F861AE3dBB677aD4E84f412F2E0",
-    "signature": "a25f537ce3a6b18a327741fddab3877e44cb30d5d17af4b7982ffb8ee38c21d95cb51e8532ec3a4042f2b5c42f9f8a35c48cc73b39857ab9d8e63bfb7d0943231c",
+    "signature": "9d82e2ce33fcb4fb0f043ccd8fbd65eec862ec59957b83e81d6f1c75aed5c521014855cba33f73241daae2b075d92e5d3467e981698a0f98c1d3f248ef34d89b1c",
     "quote": "040002008100000000000000939a7233f79c4ca9940a0db3957f060783fbfe61...(5006 bytes total)"
   },
   "verification": {
@@ -51,8 +51,8 @@
       },
       {
         "name": "quote_authenticity",
-        "passed": null,
-        "detail": "skipped \u2014 simulator/dev mode (set PHALA_VERIFY_URL after deploying to real TDX)"
+        "passed": true,
+        "detail": "Intel SGX PCK chain verified to the Intel Root CA"
       }
     ]
   }

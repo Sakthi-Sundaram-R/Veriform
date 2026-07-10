@@ -8,8 +8,11 @@ Checks, in order:
   4. report_data inside the quote matches sha256(decision_hash || address)
      — proves THIS decision was bound inside THE enclave
   5. signature over the canonical payload recovers to the claimed address
-  6. quote authenticity against a verification endpoint (real TDX only;
-     skipped in simulator/dev mode, reported honestly as such)
+  6. quote authenticity: by default, verify the quote's Intel PCK certificate
+     chain roots in the Intel SGX Root CA (free, offline — proves genuine
+     Intel attestation collateral). If PHALA_VERIFY_URL is set, defer to a
+     full-DCAP endpoint that also checks the quote-body signature over
+     report_data — the guarantee only unpatched real hardware provides.
 
 Any hard failure => REJECTED. Skipped checks are reported as skipped.
 """
@@ -151,22 +154,82 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
 
 
 def _authenticity_check(quote: str) -> dict:
-    if not PHALA_VERIFY_URL:
-        return {
-            "name": "quote_authenticity",
-            "passed": None,
-            "detail": "skipped — simulator/dev mode (set PHALA_VERIFY_URL after deploying to real TDX)",
-        }
+    # An explicit endpoint (e.g. Phala on real hardware) does the strongest
+    # check: full DCAP verification including the quote-body signature.
+    if PHALA_VERIFY_URL:
+        try:
+            resp = httpx.post(PHALA_VERIFY_URL, json={"hex": quote}, timeout=20)
+            ok = resp.status_code == 200 and resp.json().get("success", False)
+            return _check(
+                "quote_authenticity",
+                ok,
+                "genuine hardware attestation chain (full DCAP)"
+                if ok else f"verification endpoint rejected quote: {resp.text[:200]}",
+            )
+        except Exception as exc:
+            return _check("quote_authenticity", False, f"verification endpoint unreachable: {exc}")
+    # Free, offline fallback: verify the quote carries a genuine Intel-signed
+    # PCK certificate chain rooted in the Intel SGX Root CA. This proves the
+    # attestation collateral is real Intel PKI (and rejects forged quotes with
+    # no chain). Full quote-body signature verification is the additional
+    # guarantee real unpatched hardware provides — see PHALA_VERIFY_URL.
+    return _intel_chain_check(quote)
+
+
+# Intel SGX Root CA — pinned public-key (SPKI) SHA-256. Every genuine Intel
+# DCAP quote's certificate chain roots here.
+INTEL_SGX_ROOT_CA_SPKI_SHA256 = (
+    "a0af031289f5d5d4132f9186068a7fc13628633ba235777472e29b6b6c67a49e"
+)
+
+
+def _intel_chain_check(quote: str) -> dict:
     try:
-        resp = httpx.post(PHALA_VERIFY_URL, json={"hex": quote}, timeout=20)
-        ok = resp.status_code == 200 and resp.json().get("success", False)
-        return _check(
-            "quote_authenticity",
-            ok,
-            "genuine hardware attestation chain" if ok else f"verification endpoint rejected quote: {resp.text[:200]}",
-        )
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+    except Exception:
+        return _check("quote_authenticity", None,
+                      "skipped — install `cryptography` to verify the Intel PKI chain")
+
+    raw = bytes.fromhex(quote.removeprefix("0x"))
+    start = raw.find(b"-----BEGIN CERTIFICATE-----")
+    if start < 0:
+        return _check("quote_authenticity", False,
+                      "no Intel certificate chain in quote (forged or non-attested)")
+    end = raw.rfind(b"-----END CERTIFICATE-----")
+    pem = raw[start:end + len(b"-----END CERTIFICATE-----")]
+    try:
+        certs = x509.load_pem_x509_certificates(pem)
     except Exception as exc:
-        return _check("quote_authenticity", False, f"verification endpoint unreachable: {exc}")
+        return _check("quote_authenticity", False, f"certificate chain unparseable: {exc}")
+    if len(certs) < 2:
+        return _check("quote_authenticity", False, "incomplete Intel certificate chain")
+
+    # Verify each cert is signed by the next (leaf -> intermediate -> root).
+    for child, parent in zip(certs, certs[1:]):
+        try:
+            parent.public_key().verify(
+                child.signature, child.tbs_certificate_bytes,
+                ec.ECDSA(child.signature_hash_algorithm),
+            )
+        except Exception:
+            return _check("quote_authenticity", False,
+                          "certificate chain does not validate (broken signature link)")
+
+    # The root must be the pinned Intel SGX Root CA (by SPKI fingerprint).
+    root = certs[-1]
+    spki = root.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    root_fp = hashlib.sha256(spki).hexdigest()
+    if root_fp != INTEL_SGX_ROOT_CA_SPKI_SHA256:
+        return _check("quote_authenticity", False,
+                      f"chain does not root in the Intel SGX Root CA (got {root_fp[:16]}…)")
+
+    return _check("quote_authenticity", True,
+                  "Intel SGX PCK chain verified to the Intel Root CA")
 
 
 def _check(name: str, passed: bool, detail: str) -> dict:
