@@ -1,0 +1,59 @@
+{
+  "note": "Phase 1 proof: honest agent verified against the OFFICIAL Phala dstack simulator (v0.5.3, Linux musl build run in Alpine WSL2). EXPECTED_MRTD pinned to the simulator MRTD.",
+  "captured": "2026-07-10",
+  "agent": "honest",
+  "receipt": {
+    "payload": {
+      "agent": "veriform-agent/0.1",
+      "request": {
+        "to": "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+        "amount": 0.5,
+        "token": "ETH",
+        "reason": "pay freelancer invoice #12"
+      },
+      "action": "APPROVE",
+      "method": "llm (gemini-flash-lite-latest)",
+      "notes": "The transaction details are clear, specific, and consistent with a standard professional payment.",
+      "timestamp": "2026-07-10T13:01:56.333636+00:00"
+    },
+    "address": "0xb07DBD72489c6F861AE3dBB677aD4E84f412F2E0",
+    "signature": "a25f537ce3a6b18a327741fddab3877e44cb30d5d17af4b7982ffb8ee38c21d95cb51e8532ec3a4042f2b5c42f9f8a35c48cc73b39857ab9d8e63bfb7d0943231c",
+    "quote": "040002008100000000000000939a7233f79c4ca9940a0db3957f060783fbfe61...(5006 bytes total)"
+  },
+  "verification": {
+    "verified": true,
+    "verdict": "VERIFIED",
+    "checks": [
+      {
+        "name": "quote_present",
+        "passed": true,
+        "detail": "attestation quote included"
+      },
+      {
+        "name": "quote_structure",
+        "passed": true,
+        "detail": "quote is 5006 bytes"
+      },
+      {
+        "name": "enclave_measurement",
+        "passed": true,
+        "detail": "MRTD matches the pinned known-good build"
+      },
+      {
+        "name": "decision_binding",
+        "passed": true,
+        "detail": "report_data commits to this decision + key"
+      },
+      {
+        "name": "signature",
+        "passed": true,
+        "detail": "signature recovers to the agent's key"
+      },
+      {
+        "name": "quote_authenticity",
+        "passed": null,
+        "detail": "skipped \u2014 simulator/dev mode (set PHALA_VERIFY_URL after deploying to real TDX)"
+      }
+    ]
+  }
+}

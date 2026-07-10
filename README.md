@@ -136,8 +136,8 @@ Point the verifier at the deployed URL — the ✅ is now backed by real hardwar
 - [x] Live end-to-end run (dev shim on Windows: honest ✅ / evil ❌)
 - [x] **Phase 2 — LLM judgment live (free):** pluggable judge (`anthropic | gemini | ollama | none`), all fail closed. Verified with Gemini free tier: legit rent → reasoned APPROVE, giveaway scam → reasoned DENY, both in verified receipts.
 
-### Phase 1 — Official simulator run (~2 hrs, needs Docker or WSL)
-Replace the dev shim with the real `phala simulator start` (Docker Desktop or a WSL Ubuntu distro), run `docker compose up`, and confirm the same ✅/❌ demo against genuine dstack-simulator quotes. **Done when:** the full demo passes with `dev-sim/` not running.
+### Phase 1 — Official simulator run ✅ DONE
+Validated against the **official Phala dstack simulator** (v0.5.3). `phala simulator start` refuses to run on Windows and ships no Windows binary, so the Linux (musl) simulator runs inside a ~3.5 MB Alpine WSL2 distro, reachable from Windows over TCP — see [`scripts/run-official-sim-windows.sh`](scripts/run-official-sim-windows.sh). The honest agent's receipt **VERIFIES** with a real 5006-byte TDX quote ([proof](docs/phase1-official-sim-proof.json)): `quote_present`, `quote_structure`, `enclave_measurement` (real MRTD pinned), `decision_binding`, and `signature` all pass; only `quote_authenticity` is skipped (needs real hardware + Intel PKI, i.e. Phase 3). Evil agents still rejected. This proves the binding scheme, byte offsets, and measurement pinning are correct against the genuine dstack quote format — not just the dev shim.
 
 ### Phase 3 — Real TEE deploy on Phala Cloud (ready; one command)
 Agent image is built and public at `ghcr.io/sakthi-sundaram-r/veriform-agent`; deploy config is [`docker-compose.phala.yaml`](docker-compose.phala.yaml). After `phala login` + a $1 top-up, one script deploys → captures the real TDX quote → tears down:
