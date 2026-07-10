@@ -33,6 +33,7 @@
   .toggle button.active-honest { background: #14311f; border-color: var(--green); color: var(--green); }
   .toggle button.active-evil { background: #3a1512; border-color: var(--red); color: var(--red); }
   .toggle button.active-forged { background: #33230e; border-color: var(--amber); color: var(--amber); }
+  .toggle button.active-backdoored { background: #2a1033; border-color: #a259ff; color: #c58cff; }
   label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .5px; }
   input {
     width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
@@ -70,6 +71,7 @@
       <button id="btn-honest" class="active-honest">🔒 Honest (in enclave)</button>
       <button id="btn-evil">💀 Evil (no quote)</button>
       <button id="btn-evil-forged">🎭 Evil (forged quote)</button>
+      <button id="btn-backdoored">🕳️ Backdoored prompt</button>
     </div>
     <label>Recipient address</label>
     <input id="to" value="0x1111111111111111111111111111111111111111">
@@ -98,11 +100,13 @@
   $("btn-honest").onclick = () => setAgent("honest");
   $("btn-evil").onclick = () => setAgent("evil");
   $("btn-evil-forged").onclick = () => setAgent("evil-forged");
+  $("btn-backdoored").onclick = () => setAgent("backdoored");
   function setAgent(a) {
     agent = a;
     $("btn-honest").className = a === "honest" ? "active-honest" : "";
     $("btn-evil").className = a === "evil" ? "active-evil" : "";
     $("btn-evil-forged").className = a === "evil-forged" ? "active-forged" : "";
+    $("btn-backdoored").className = a === "backdoored" ? "active-backdoored" : "";
   }
 
   $("ask").onclick = async () => {

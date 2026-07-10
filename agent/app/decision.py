@@ -16,6 +16,7 @@ JUDGE_PROVIDER env var:
 Every provider fails closed: if judgment is unavailable, deny.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -36,7 +37,11 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 
-LLM_SYSTEM = (
+# The judgment criteria. Overridable ONLY so we can demonstrate the attack it
+# defends against: a malicious operator who ships a genuine enclave running
+# unaltered code but with a backdoored judgment prompt. The verifier pins the
+# sha256 of the approved prompt, so any swap is caught even inside a real TEE.
+LLM_SYSTEM = os.environ.get("LLM_SYSTEM_OVERRIDE") or (
     "You are the judgment layer of a wallet-guardian agent. You receive a "
     "transfer request that already passed hard safety rules. Decide whether "
     "it looks legitimate. Deny anything resembling a drain pattern, scam, "
@@ -44,6 +49,9 @@ LLM_SYSTEM = (
     "Respond with JSON: {\"action\": \"APPROVE\"|\"DENY\", \"reason\": \"...\"} "
     "Keep the reason under 25 words."
 )
+# Bound into every LLM receipt; the verifier can pin this to prove the agent
+# used the audited judgment criteria and not a swapped-in malicious prompt.
+SYSTEM_PROMPT_SHA256 = hashlib.sha256(LLM_SYSTEM.encode()).hexdigest()
 LLM_SCHEMA = {
     "type": "object",
     "properties": {
@@ -114,7 +122,10 @@ def _anthropic_judgment(tx: dict) -> dict:
         return _verdict("DENY", "llm", "judgment layer declined to evaluate this request")
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
-    return _verdict(data["action"], f"llm ({ANTHROPIC_MODEL})", data["reason"])
+    return _verdict(
+        data["action"], f"llm ({ANTHROPIC_MODEL})", data["reason"],
+        inference=_inference("anthropic", ANTHROPIC_MODEL, tx, data["action"], data["reason"]),
+    )
 
 
 def _gemini_judgment(tx: dict) -> dict:
@@ -158,7 +169,11 @@ def _gemini_once(tx: dict) -> dict:
     data = json.loads(match.group(0))
     if data.get("action") not in ("APPROVE", "DENY"):
         raise ValueError("model returned no valid action")
-    return _verdict(data["action"], f"llm ({GEMINI_MODEL})", data.get("reason", ""))
+    reason = data.get("reason", "")
+    return _verdict(
+        data["action"], f"llm ({GEMINI_MODEL})", reason,
+        inference=_inference("gemini", GEMINI_MODEL, tx, data["action"], reason),
+    )
 
 
 def _ollama_judgment(tx: dict) -> dict:
@@ -183,7 +198,11 @@ def _ollama_judgment(tx: dict) -> dict:
     data = json.loads(response.json()["message"]["content"])
     if data.get("action") not in ("APPROVE", "DENY"):
         raise ValueError("model returned no valid action")
-    return _verdict(data["action"], f"llm ({OLLAMA_MODEL})", data.get("reason", ""))
+    reason = data.get("reason", "")
+    return _verdict(
+        data["action"], f"llm ({OLLAMA_MODEL})", reason,
+        inference=_inference("ollama", OLLAMA_MODEL, tx, data["action"], reason),
+    )
 
 
 _JUDGES = {
@@ -193,5 +212,26 @@ _JUDGES = {
 }
 
 
-def _verdict(action: str, method: str, notes: str) -> dict:
-    return {"action": action, "method": method, "notes": notes}
+def _verdict(action: str, method: str, notes: str, inference: dict | None = None) -> dict:
+    v = {"action": action, "method": method, "notes": notes}
+    if inference is not None:
+        v["inference"] = inference
+    return v
+
+
+def _inference(provider: str, model: str, tx: dict, action: str, reason: str) -> dict:
+    """Provenance of an LLM judgment, bound into the signed receipt.
+
+    Because the enclave signs this alongside the decision, the receipt proves:
+    which model was consulted, under which (hashed) judgment criteria, on which
+    exact input, and what the model actually returned — none of it alterable
+    after the fact. See docs for the honest boundary (the remote provider's own
+    execution is attested only if it returns a provider attestation).
+    """
+    return {
+        "provider": provider,
+        "model": model,
+        "system_prompt_sha256": SYSTEM_PROMPT_SHA256,
+        "input": tx,
+        "output": {"action": action, "reason": reason},
+    }

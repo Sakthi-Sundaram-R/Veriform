@@ -8,6 +8,10 @@ Checks, in order:
   4. report_data inside the quote matches sha256(decision_hash || address)
      — proves THIS decision was bound inside THE enclave
   5. signature over the canonical payload recovers to the claimed address
+  5b. inference provenance: for LLM-judged decisions, the judgment prompt
+     matches the audited one (pinned) and the agent reported the model's
+     output faithfully — catches a backdoored judgment prompt even in a
+     genuine enclave
   6. quote authenticity: by default, verify the quote's Intel PCK certificate
      chain roots in the Intel SGX Root CA (free, offline — proves genuine
      Intel attestation collateral). If PHALA_VERIFY_URL is set, defer to a
@@ -38,6 +42,10 @@ PHALA_VERIFY_URL = os.environ.get("PHALA_VERIFY_URL", "")
 # Pin the known-good enclave measurement (hex). Unset => check is skipped,
 # which is honest for dev/simulator builds where the MRTD isn't meaningful.
 EXPECTED_MRTD = os.environ.get("EXPECTED_MRTD", "").lower().removeprefix("0x")
+# Pin the sha256 of the audited LLM judgment prompt. When set, receipts whose
+# LLM judgment used a different (e.g. backdoored) system prompt are rejected —
+# even from a genuine enclave running unaltered code.
+EXPECTED_SYSTEM_PROMPT_SHA256 = os.environ.get("EXPECTED_SYSTEM_PROMPT_SHA256", "").lower()
 
 
 def canonical_bytes(payload: dict) -> bytes:
@@ -139,7 +147,13 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         checks.append(_check("signature", False, f"signature invalid: {exc}"))
         hard_fail = True
 
-    # 6. Quote authenticity (real hardware attestation chain)
+    # 6. Inference provenance (for LLM-judged decisions): the judgment criteria
+    #    match the audited prompt, and the agent reported the model faithfully.
+    prov = _inference_provenance_check(payload)
+    checks.append(prov)
+    hard_fail |= prov["passed"] is False
+
+    # 7. Quote authenticity (real hardware attestation chain)
     if quote and not hard_fail:
         auth = _authenticity_check(quote)
         checks.append(auth)
@@ -151,6 +165,54 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         "verdict": "VERIFIED" if verified else "REJECTED",
         "checks": checks,
     }
+
+
+def _inference_provenance_check(payload: dict) -> dict:
+    """Verify the attested LLM-judgment provenance.
+
+    For rule-based decisions there is no model to attest — reported as skipped.
+    For LLM decisions:
+      * the top-level action must match what the model actually returned
+        (the agent can't claim the model approved when it denied), and
+      * if EXPECTED_SYSTEM_PROMPT_SHA256 is pinned, the judgment prompt must
+        match the audited one — catching a backdoored prompt even inside a
+        genuine enclave.
+    """
+    inf = payload.get("inference")
+    if not inf:
+        return {
+            "name": "inference_provenance",
+            "passed": None,
+            "detail": "rule-based decision — no model judgment to attest",
+        }
+
+    # The agent must not misreport the model's verdict.
+    model_action = (inf.get("output") or {}).get("action")
+    if payload.get("action") != model_action:
+        return _check(
+            "inference_provenance", False,
+            f"agent reported {payload.get('action')} but the model returned {model_action}",
+        )
+
+    if EXPECTED_SYSTEM_PROMPT_SHA256:
+        got = str(inf.get("system_prompt_sha256", "")).lower()
+        if got != EXPECTED_SYSTEM_PROMPT_SHA256:
+            return _check(
+                "inference_provenance", False,
+                "judgment prompt does not match the audited criteria "
+                f"(got {got[:16]}…) — possible backdoored prompt",
+            )
+        return _check(
+            "inference_provenance", True,
+            f"judged by {inf.get('model')} under the audited prompt; "
+            "action matches the model's output",
+        )
+
+    return _check(
+        "inference_provenance", True,
+        f"judged by {inf.get('model')}; action matches the model's output "
+        "(pin EXPECTED_SYSTEM_PROMPT_SHA256 to also verify the criteria)",
+    )
 
 
 def _authenticity_check(quote: str) -> dict:

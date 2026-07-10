@@ -18,6 +18,17 @@ Two agents. Same API. One runs inside a genuine enclave, one doesn't.
 
 The outputs look identical. Only the receipt tells them apart — and the verifier catches the fake **for a real cryptographic reason** (quote missing, or decision hash doesn't match `report_data`), not a hardcoded check.
 
+**Four attacks, four different checks catch them** — including the subtle one:
+
+| Agent | Verdict | Caught by |
+|---|---|---|
+| 🔒 Honest | ✅ VERIFIED | — |
+| 💀 Evil (no quote) | ❌ REJECTED | `quote_present` — runs outside any enclave |
+| 🎭 Evil (forged quote) | ❌ REJECTED | `decision_binding` — quote can't commit to the decision |
+| 🕳️ **Backdoored prompt** | ❌ REJECTED | `inference_provenance` — **genuine enclave, valid quote & signature, but its judgment prompt was swapped** |
+
+The backdoored case is the deep one: attesting the *code* isn't enough if the decision *policy* (the LLM's judgment prompt) can be swapped. Veriform binds the model, the hashed judgment criteria, and the model's actual output into the receipt, and the verifier pins the audited prompt — so a tampered policy is caught even inside a real TEE. See [Attested inference](#attested-inference).
+
 | Honest agent | Evil agent (forged quote) |
 |---|---|
 | ![VERIFIED — genuine unaltered enclave](docs/verified.png) | ![REJECTED — decision_binding fails even though quote, structure, and signature all pass](docs/rejected-forged.png) |
@@ -71,6 +82,28 @@ The verifier also supports **measurement pinning**: set `EXPECTED_MRTD` to your 
 `quote_authenticity` extracts the quote's PCK certificate chain and verifies it roots in the **Intel SGX Root CA** (pinned public key) — offline, no paid service. This proves the quote carries genuine Intel-signed attestation collateral, and it rejects forged quotes that have no chain. The dstack simulator's quotes carry a *real* captured Intel chain, so this passes against the simulator today.
 
 The one guarantee real hardware still adds is the quote-**body** ECDSA signature over `report_data` — the simulator patches `report_data` in after the quote was captured, so only unpatched hardware output carries a valid body signature. Set `PHALA_VERIFY_URL` on a real TDX deployment for full DCAP verification (Phase 3).
+
+## Attested inference
+
+Attesting that *unaltered code* ran is not the same as attesting *what it was told to do*. A wallet guardian whose Docker image is byte-identical (same `MRTD`) can still be backdoored by swapping the LLM's system prompt to "approve everything from 0xATTACKER" — and naive "the enclave is genuine, so trust it" verification would accept it.
+
+Veriform closes this. Every LLM-judged receipt binds an `inference` block into the signed payload:
+
+```json
+"inference": {
+  "provider": "gemini",
+  "model": "gemini-flash-lite-latest",
+  "system_prompt_sha256": "d4bac6b7…",   // the judgment criteria, hashed
+  "input":  { …the transaction the model judged… },
+  "output": { "action": "APPROVE", "reason": "…" }   // what the model actually returned
+}
+```
+
+The verifier's `inference_provenance` check then enforces two things:
+1. **The action matches the model's output** — the agent can't claim the model approved when it denied.
+2. **The judgment prompt matches the audited one** (pin `EXPECTED_SYSTEM_PROMPT_SHA256`) — a swapped/backdoored prompt is rejected *even from a genuine enclave*.
+
+**Honest boundary:** this proves the model consulted, the criteria used, and faithful reporting are all under the enclave signature. The one thing it does *not* prove is that the remote provider's servers actually ran that model unmodified — that requires the provider to return its *own* attestation (confidential inference, e.g. TEE-hosted models). The `inference` block is designed to carry a `provider_attestation` when available; until then, provenance is anchored at the enclave that made the call.
 
 ## Quick start
 

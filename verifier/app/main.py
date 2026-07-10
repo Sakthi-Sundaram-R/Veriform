@@ -15,12 +15,16 @@ app = FastAPI(title="Veriform Verifier")
 
 _AGENT_URL = os.environ.get("AGENT_URL", "http://localhost:8001")
 _EVIL_URL = os.environ.get("EVIL_AGENT_URL", "http://localhost:8002")
+_BACKDOORED_URL = os.environ.get("BACKDOORED_AGENT_URL", "http://localhost:8003")
 
 # agent name -> (base_url, query params forwarded to the agent)
 AGENT_TARGETS = {
     "honest": (_AGENT_URL, {}),
     "evil": (_EVIL_URL, {}),
     "evil-forged": (_EVIL_URL, {"mode": "forged"}),
+    # A GENUINE enclave (valid quote + signature) whose LLM judgment prompt
+    # was swapped for a backdoored one — caught by inference_provenance.
+    "backdoored": (_BACKDOORED_URL, {}),
 }
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")

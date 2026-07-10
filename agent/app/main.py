@@ -37,6 +37,11 @@ def decide_transfer(tx: TransferRequest):
         "notes": verdict["notes"],
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    # Attested inference provenance (present for LLM-judged decisions): bound
+    # into the receipt so the model, judgment criteria, and its actual output
+    # are all under the enclave signature.
+    if "inference" in verdict:
+        payload["inference"] = verdict["inference"]
     try:
         receipt = Enclave().attest(payload)
     except Exception as exc:
