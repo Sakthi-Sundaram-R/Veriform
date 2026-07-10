@@ -22,9 +22,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lowercase image name
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/veriform-agent" >> "$GITHUB_OUTPUT"
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: ./agent
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/veriform-agent:latest
+          tags: ${{ steps.img.outputs.name }}:latest
