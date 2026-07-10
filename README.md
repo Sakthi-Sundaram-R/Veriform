@@ -16,6 +16,12 @@ Two agents. Same API. One runs inside a genuine enclave, one doesn't.
 
 The outputs look identical. Only the receipt tells them apart — and the verifier catches the fake **for a real cryptographic reason** (quote missing, or decision hash doesn't match `report_data`), not a hardcoded check.
 
+| Honest agent | Evil agent (forged quote) |
+|---|---|
+| ![VERIFIED — genuine unaltered enclave](docs/verified.png) | ![REJECTED — decision_binding fails even though quote, structure, and signature all pass](docs/rejected-forged.png) |
+
+*Right side is the money shot: the forged receipt passes quote-present, structure, and signature checks — and still gets caught, because `report_data` can't commit to a decision that wasn't made inside the enclave.*
+
 ## The problem
 
 AI agents increasingly act on their own: approving transactions, handling private data, executing on-chain operations. But every agent runs on infrastructure *someone else controls*. Whoever operates that server can read the agent's inputs, alter its decisions, or extract its private keys — and the end user has no way to detect any of it.
@@ -137,7 +143,7 @@ Replace the dev shim with the real `phala simulator start` (Docker Desktop or a 
 ### Phase 4 — Demo polish (mostly done)
 - [x] Forged-quote toggle in the UI (`decision_binding` failure — quote and signature valid, binding caught)
 - [x] 2-minute demo script with judge Q&A: [DEMO.md](DEMO.md)
-- [ ] Screenshots/GIF in the README
+- [x] Screenshots in the README ([docs/](docs/), all three modes)
 
 ### Phase 5 (stretch) — On-chain anchor
 Minimal contract on Base Sepolia storing the attested agent pubkey; a demo contract action gated on "signed by a verified enclave." **Done when:** a smart contract rejects the evil agent's signature on-chain.
