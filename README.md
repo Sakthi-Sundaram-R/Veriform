@@ -126,12 +126,10 @@ Point the verifier at the deployed URL — the ✅ is now backed by real hardwar
 - [x] Verifier UI with receipt verification (✅/❌)
 - [x] Tamper demo: evil container + toggle
 - [x] Live end-to-end run (dev shim on Windows: honest ✅ / evil ❌)
+- [x] **Phase 2 — LLM judgment live (free):** pluggable judge (`anthropic | gemini | ollama | none`), all fail closed. Verified with Gemini free tier: legit rent → reasoned APPROVE, giveaway scam → reasoned DENY, both in verified receipts.
 
 ### Phase 1 — Official simulator run (~2 hrs, needs Docker or WSL)
 Replace the dev shim with the real `phala simulator start` (Docker Desktop or a WSL Ubuntu distro), run `docker compose up`, and confirm the same ✅/❌ demo against genuine dstack-simulator quotes. **Done when:** the full demo passes with `dev-sim/` not running.
-
-### Phase 2 — LLM judgment layer live (~30 min)
-Set `ANTHROPIC_API_KEY` and exercise the gray zone: a plausible mid-size transfer gets `method: "llm"` with a reasoned verdict; a drain-pattern reason ("urgent, double your money") gets denied. **Done when:** the UI shows an LLM-reasoned decision inside a verified receipt.
 
 ### Phase 3 — Real TEE deploy on Phala Cloud (~2 hrs)
 `phala auth login` → `phala deploy -c docker-compose.yaml -n veriform-agent` → grab the CVM's attestation. Point the verifier at the deployed agent and set `PHALA_VERIFY_URL` so the fifth check (`quote_authenticity`) turns green against Intel's PKI. **Done when:** all 5 checks pass on real TDX silicon and the evil agent still fails.
