@@ -1,5 +1,7 @@
 # Veriform
 
+![CI](https://github.com/Sakthi-Sundaram-R/Veriform/actions/workflows/ci.yml/badge.svg)
+
 > **Verifiable AI agents you don't have to trust.** Each agent runs inside a hardware-secured enclave (TEE) and issues a cryptographic receipt binding every decision to its unaltered code. Anyone — a user or a smart contract — can verify a decision in seconds, and any forged or tampered output is rejected instantly. **Proof, not blind trust.**
 
 ---
@@ -61,6 +63,8 @@ The TEE primitive that solves this already exists (Phala, Marlin, Atoma). What's
 2. **The verifier** is a simple web page: send an input, get back `{decision, signature, quote}`, and see one giant ✅ or ❌. It checks (a) the quote is a genuine attestation from unaltered code, and (b) the decision hash matches the quote's `report_data` and the signature.
 
 3. **On-chain anchor (stretch):** a tiny testnet contract stores the attested public key, so smart contracts can gate actions on "signed by a verified enclave."
+
+The verifier also supports **measurement pinning**: set `EXPECTED_MRTD` to your known-good build's enclave measurement and the verifier rejects receipts from any other code — even code running in a genuine enclave.
 
 ## Quick start
 

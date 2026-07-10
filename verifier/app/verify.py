@@ -3,13 +3,15 @@
 Checks, in order:
   1. quote present
   2. quote parses as a TDX-quote-sized structure
-  3. report_data inside the quote matches sha256(decision_hash || address)
+  3. enclave measurement (MRTD) matches the pinned known-good build
+     (skipped when EXPECTED_MRTD is unset — dev/simulator mode)
+  4. report_data inside the quote matches sha256(decision_hash || address)
      — proves THIS decision was bound inside THE enclave
-  4. signature over the canonical payload recovers to the claimed address
-  5. quote authenticity against a verification endpoint (real TDX only;
+  5. signature over the canonical payload recovers to the claimed address
+  6. quote authenticity against a verification endpoint (real TDX only;
      skipped in simulator/dev mode, reported honestly as such)
 
-Any hard failure in 1-4 => REJECTED. Check 5 upgrades trust when available.
+Any hard failure => REJECTED. Skipped checks are reported as skipped.
 """
 
 import hashlib
@@ -24,8 +26,15 @@ from eth_account.messages import encode_defunct
 # 64 bytes of the 584-byte body => absolute offset 568..632.
 REPORT_DATA_OFFSET = 568
 REPORT_DATA_END = 632
+# MRTD (measurement of the enclave's initial code/data) sits at body offset
+# 136 for 48 bytes => absolute 184..232.
+MRTD_OFFSET = 184
+MRTD_END = 232
 
 PHALA_VERIFY_URL = os.environ.get("PHALA_VERIFY_URL", "")
+# Pin the known-good enclave measurement (hex). Unset => check is skipped,
+# which is honest for dev/simulator builds where the MRTD isn't meaningful.
+EXPECTED_MRTD = os.environ.get("EXPECTED_MRTD", "").lower().removeprefix("0x")
 
 
 def canonical_bytes(payload: dict) -> bytes:
@@ -67,7 +76,31 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
             checks.append(_check("quote_structure", False, "quote is not valid hex"))
             hard_fail = True
 
-    # 3. Decision binding: report_data must commit to this exact decision
+    # 3. Enclave measurement: the quote's MRTD must match the pinned
+    #    known-good build (when one is pinned)
+    if len(quote_bytes) >= REPORT_DATA_END:
+        mrtd = quote_bytes[MRTD_OFFSET:MRTD_END].hex()
+        if not EXPECTED_MRTD:
+            checks.append({
+                "name": "enclave_measurement",
+                "passed": None,
+                "detail": "skipped — no expected measurement pinned "
+                          "(set EXPECTED_MRTD to the known-good build's MRTD)",
+            })
+        else:
+            ok = mrtd == EXPECTED_MRTD
+            checks.append(
+                _check(
+                    "enclave_measurement",
+                    ok,
+                    "MRTD matches the pinned known-good build"
+                    if ok
+                    else f"MRTD {mrtd[:16]}... does not match the pinned build — different code is running",
+                )
+            )
+            hard_fail |= not ok
+
+    # 4. Decision binding: report_data must commit to this exact decision
     if len(quote_bytes) >= REPORT_DATA_END:
         report_data = quote_bytes[REPORT_DATA_OFFSET:REPORT_DATA_END]
         ok = report_data[:32] == expected_binding(payload, address)
@@ -82,7 +115,7 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         )
         hard_fail |= not ok
 
-    # 4. Signature
+    # 5. Signature
     try:
         recovered = Account.recover_message(
             encode_defunct(canonical_bytes(payload)),
@@ -103,7 +136,7 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         checks.append(_check("signature", False, f"signature invalid: {exc}"))
         hard_fail = True
 
-    # 5. Quote authenticity (real hardware attestation chain)
+    # 6. Quote authenticity (real hardware attestation chain)
     if quote and not hard_fail:
         auth = _authenticity_check(quote)
         checks.append(auth)
