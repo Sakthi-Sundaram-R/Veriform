@@ -134,8 +134,10 @@ Replace the dev shim with the real `phala simulator start` (Docker Desktop or a 
 ### Phase 3 — Real TEE deploy on Phala Cloud (~2 hrs)
 `phala auth login` → `phala deploy -c docker-compose.yaml -n veriform-agent` → grab the CVM's attestation. Point the verifier at the deployed agent and set `PHALA_VERIFY_URL` so the fifth check (`quote_authenticity`) turns green against Intel's PKI. **Done when:** all 5 checks pass on real TDX silicon and the evil agent still fails.
 
-### Phase 4 — Demo polish (~2 hrs)
-Forged-quote toggle in the UI (exercise `EVIL_MODE=forged` → `decision_binding` failure, a subtler attack than a missing quote), screenshots/GIF in the README, and the 2-minute demo script: honest ✅ → tamper → ❌ → "the verifier caught it with math, not trust."
+### Phase 4 — Demo polish (mostly done)
+- [x] Forged-quote toggle in the UI (`decision_binding` failure — quote and signature valid, binding caught)
+- [x] 2-minute demo script with judge Q&A: [DEMO.md](DEMO.md)
+- [ ] Screenshots/GIF in the README
 
 ### Phase 5 (stretch) — On-chain anchor
 Minimal contract on Base Sepolia storing the attested agent pubkey; a demo contract action gated on "signed by a verified enclave." **Done when:** a smart contract rejects the evil agent's signature on-chain.

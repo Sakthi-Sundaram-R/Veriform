@@ -50,7 +50,7 @@ def health():
 
 
 @app.post("/decide")
-def decide_transfer(tx: TransferRequest):
+def decide_transfer(tx: TransferRequest, mode: str | None = None):
     payload = {
         "agent": AGENT_ID,
         "request": tx.model_dump(),
@@ -64,5 +64,5 @@ def decide_transfer(tx: TransferRequest):
         "payload": payload,
         "address": ACCOUNT.address,
         "signature": signed.signature.hex(),
-        "quote": _forged_quote() if EVIL_MODE == "forged" else None,
+        "quote": _forged_quote() if (mode or EVIL_MODE) == "forged" else None,
     }

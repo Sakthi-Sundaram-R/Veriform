@@ -13,9 +13,14 @@ from .verify import verify_receipt
 
 app = FastAPI(title="Veriform Verifier")
 
-AGENT_URLS = {
-    "honest": os.environ.get("AGENT_URL", "http://localhost:8001"),
-    "evil": os.environ.get("EVIL_AGENT_URL", "http://localhost:8002"),
+_AGENT_URL = os.environ.get("AGENT_URL", "http://localhost:8001")
+_EVIL_URL = os.environ.get("EVIL_AGENT_URL", "http://localhost:8002")
+
+# agent name -> (base_url, query params forwarded to the agent)
+AGENT_TARGETS = {
+    "honest": (_AGENT_URL, {}),
+    "evil": (_EVIL_URL, {}),
+    "evil-forged": (_EVIL_URL, {"mode": "forged"}),
 }
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
@@ -36,13 +41,14 @@ def index():
 
 @app.post("/ask")
 def ask(req: AskRequest):
-    base_url = AGENT_URLS.get(req.agent)
-    if not base_url:
+    target = AGENT_TARGETS.get(req.agent)
+    if not target:
         raise HTTPException(status_code=400, detail=f"unknown agent '{req.agent}'")
+    base_url, params = target
 
     tx = {"to": req.to, "amount": req.amount, "token": req.token, "reason": req.reason}
     try:
-        resp = httpx.post(f"{base_url}/decide", json=tx, timeout=60)
+        resp = httpx.post(f"{base_url}/decide", json=tx, params=params, timeout=120)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"agent unreachable: {exc}")
     if resp.status_code != 200:
