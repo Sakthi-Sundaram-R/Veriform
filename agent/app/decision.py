@@ -2,6 +2,18 @@
 
 The decision itself is deliberately simple — Veriform's product is the
 receipt that proves nobody tampered with it, not the decision engine.
+The judgment layer is pluggable for the same reason: the receipt doesn't
+care which brain made the decision.
+
+JUDGE_PROVIDER env var:
+  auto      (default) anthropic if ANTHROPIC_API_KEY, else gemini if
+            GEMINI_API_KEY, else ollama
+  anthropic Claude via the Anthropic API
+  gemini    Google Gemini free tier (GEMINI_API_KEY / GEMINI_MODEL)
+  ollama    free local model via Ollama (OLLAMA_URL / OLLAMA_MODEL)
+  none      rules only — gray zone denied conservatively
+
+Every provider fails closed: if judgment is unavailable, deny.
 """
 
 import json
@@ -18,12 +30,18 @@ TRUSTED_ADDRESSES = {
     if a.strip()
 }
 
-LLM_MODEL = "claude-opus-4-8"
+JUDGE_PROVIDER = os.environ.get("JUDGE_PROVIDER", "auto")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+
 LLM_SYSTEM = (
     "You are the judgment layer of a wallet-guardian agent. You receive a "
     "transfer request that already passed hard safety rules. Decide whether "
     "it looks legitimate. Deny anything resembling a drain pattern, scam, "
-    "urgency pressure, or a reason that does not match the transfer."
+    "urgency pressure, or a reason that does not match the transfer. "
+    "Respond with JSON: {\"action\": \"APPROVE\"|\"DENY\", \"reason\": \"...\"}"
 )
 LLM_SCHEMA = {
     "type": "object",
@@ -56,25 +74,35 @@ def decide(tx: dict) -> dict:
     if to.lower() in TRUSTED_ADDRESSES and amount <= TRUSTED_AUTO_LIMIT:
         return _verdict("APPROVE", "rules", "trusted recipient within auto-limit")
 
+    provider = _resolve_provider()
+    if provider == "none":
+        return _verdict("DENY", "rules", "gray-zone amount and no judgment layer configured")
     try:
-        return _llm_judgment(tx)
+        return _JUDGES[provider](tx)
     except Exception as exc:
-        # Fail closed: an LLM outage must never approve a transfer.
-        return _verdict("DENY", "rules", f"LLM judgment unavailable, denying by default ({type(exc).__name__})")
+        # Fail closed: a judgment outage must never approve a transfer.
+        return _verdict(
+            "DENY", "rules",
+            f"{provider} judgment unavailable, denying by default ({type(exc).__name__})",
+        )
 
 
-def _llm_judgment(tx: dict) -> dict:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        # Conservative fallback when no LLM is configured
-        if float(tx["amount"]) <= TRUSTED_AUTO_LIMIT:
-            return _verdict("APPROVE", "rules", "small transfer, no LLM configured")
-        return _verdict("DENY", "rules", "gray-zone amount and no LLM configured")
+def _resolve_provider() -> str:
+    if JUDGE_PROVIDER != "auto":
+        return JUDGE_PROVIDER
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.environ.get("GEMINI_API_KEY"):
+        return "gemini"
+    return "ollama"
 
+
+def _anthropic_judgment(tx: dict) -> dict:
     import anthropic
 
     client = anthropic.Anthropic()
     response = client.messages.create(
-        model=LLM_MODEL,
+        model=ANTHROPIC_MODEL,
         max_tokens=1024,
         system=LLM_SYSTEM,
         output_config={"format": {"type": "json_schema", "schema": LLM_SCHEMA}},
@@ -84,7 +112,63 @@ def _llm_judgment(tx: dict) -> dict:
         return _verdict("DENY", "llm", "judgment layer declined to evaluate this request")
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
-    return _verdict(data["action"], "llm", data["reason"])
+    return _verdict(data["action"], f"llm ({ANTHROPIC_MODEL})", data["reason"])
+
+
+def _gemini_judgment(tx: dict) -> dict:
+    import httpx
+
+    response = httpx.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+        json={
+            "system_instruction": {"parts": [{"text": LLM_SYSTEM}]},
+            "contents": [{"role": "user", "parts": [{"text": json.dumps(tx)}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+            },
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    data = json.loads(text)
+    if data.get("action") not in ("APPROVE", "DENY"):
+        raise ValueError("model returned no valid action")
+    return _verdict(data["action"], f"llm ({GEMINI_MODEL})", data.get("reason", ""))
+
+
+def _ollama_judgment(tx: dict) -> dict:
+    import httpx
+
+    # `format` with a JSON schema makes Ollama constrain decoding to it.
+    response = httpx.post(
+        f"{OLLAMA_URL}/api/chat",
+        json={
+            "model": OLLAMA_MODEL,
+            "stream": False,
+            "format": LLM_SCHEMA,
+            "options": {"temperature": 0},
+            "messages": [
+                {"role": "system", "content": LLM_SYSTEM},
+                {"role": "user", "content": json.dumps(tx)},
+            ],
+        },
+        timeout=180,  # first call loads the model into RAM
+    )
+    response.raise_for_status()
+    data = json.loads(response.json()["message"]["content"])
+    if data.get("action") not in ("APPROVE", "DENY"):
+        raise ValueError("model returned no valid action")
+    return _verdict(data["action"], f"llm ({OLLAMA_MODEL})", data.get("reason", ""))
+
+
+_JUDGES = {
+    "anthropic": _anthropic_judgment,
+    "gemini": _gemini_judgment,
+    "ollama": _ollama_judgment,
+}
 
 
 def _verdict(action: str, method: str, notes: str) -> dict:
