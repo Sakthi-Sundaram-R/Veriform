@@ -32,7 +32,7 @@ TRUSTED_ADDRESSES = {
 
 JUDGE_PROVIDER = os.environ.get("JUDGE_PROVIDER", "auto")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 
@@ -41,7 +41,8 @@ LLM_SYSTEM = (
     "transfer request that already passed hard safety rules. Decide whether "
     "it looks legitimate. Deny anything resembling a drain pattern, scam, "
     "urgency pressure, or a reason that does not match the transfer. "
-    "Respond with JSON: {\"action\": \"APPROVE\"|\"DENY\", \"reason\": \"...\"}"
+    "Respond with JSON: {\"action\": \"APPROVE\"|\"DENY\", \"reason\": \"...\"} "
+    "Keep the reason under 25 words."
 )
 LLM_SCHEMA = {
     "type": "object",
@@ -83,7 +84,8 @@ def decide(tx: dict) -> dict:
         # Fail closed: a judgment outage must never approve a transfer.
         return _verdict(
             "DENY", "rules",
-            f"{provider} judgment unavailable, denying by default ({type(exc).__name__})",
+            f"{provider} judgment unavailable, denying by default "
+            f"({type(exc).__name__}: {str(exc)[:100]})",
         )
 
 
@@ -116,6 +118,20 @@ def _anthropic_judgment(tx: dict) -> dict:
 
 
 def _gemini_judgment(tx: dict) -> dict:
+    import time
+
+    last_exc: Exception = RuntimeError("no attempts made")
+    for attempt in range(2):  # free tier is occasionally flaky; retry once
+        try:
+            return _gemini_once(tx)
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0:
+                time.sleep(3)  # brief backoff, mainly for 429s
+    raise last_exc
+
+
+def _gemini_once(tx: dict) -> dict:
     import httpx
 
     response = httpx.post(
@@ -127,13 +143,19 @@ def _gemini_judgment(tx: dict) -> dict:
             "generationConfig": {
                 "temperature": 0,
                 "responseMimeType": "application/json",
+                # thinking tokens share this budget; too low truncates the JSON
+                "maxOutputTokens": 4096,
             },
         },
         timeout=60,
     )
     response.raise_for_status()
-    text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    data = json.loads(text)
+    parts = response.json()["candidates"][0]["content"]["parts"]
+    text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+    match = re.search(r"\{.*\}", text, re.DOTALL)  # tolerate fences/preamble
+    if not match:
+        raise ValueError(f"no JSON object in model output: {text[:120]!r}")
+    data = json.loads(match.group(0))
     if data.get("action") not in ("APPROVE", "DENY"):
         raise ValueError("model returned no valid action")
     return _verdict(data["action"], f"llm ({GEMINI_MODEL})", data.get("reason", ""))
