@@ -91,19 +91,17 @@ docker compose up
 >   - /var/run/dstack.sock:/var/run/dstack.sock
 > ```
 
-### Windows / no Docker? Use the dev shim
+### Windows / no Docker? One command
 
-`phala simulator start` doesn't support Windows yet. [dev-sim/sim.py](dev-sim/sim.py) speaks the same dstack wire protocol (clearly labeled NOT-A-TEE) so the unmodified agent runs anywhere:
+`phala simulator start` doesn't support Windows yet. [dev-sim/sim.py](dev-sim/sim.py) speaks the same dstack wire protocol (clearly labeled NOT-A-TEE) so the unmodified agent runs anywhere. Launch the whole stack with:
 
-```bash
+```powershell
 pip install fastapi uvicorn httpx eth-account dstack-sdk anthropic
-
-# four terminals (or background jobs):
-uvicorn sim:app --port 8090 --app-dir dev-sim
-DSTACK_SIMULATOR_ENDPOINT=http://localhost:8090 uvicorn app.main:app --port 8001 --app-dir agent
-uvicorn app.main:app --port 8002 --app-dir evil-agent
-uvicorn app.main:app --port 3000 --app-dir verifier
+powershell -ExecutionPolicy Bypass -File scripts\run-local.ps1
+# open http://localhost:3000
 ```
+
+It reads `GEMINI_API_KEY` from `.env` (free tier) and falls back to rules-only judging if absent.
 
 ### Deploy to a real TEE
 
@@ -141,8 +139,14 @@ Point the verifier at the deployed URL — the ✅ is now backed by real hardwar
 ### Phase 1 — Official simulator run (~2 hrs, needs Docker or WSL)
 Replace the dev shim with the real `phala simulator start` (Docker Desktop or a WSL Ubuntu distro), run `docker compose up`, and confirm the same ✅/❌ demo against genuine dstack-simulator quotes. **Done when:** the full demo passes with `dev-sim/` not running.
 
-### Phase 3 — Real TEE deploy on Phala Cloud (~2 hrs)
-`phala auth login` → `phala deploy -c docker-compose.yaml -n veriform-agent` → grab the CVM's attestation. Point the verifier at the deployed agent and set `PHALA_VERIFY_URL` so the fifth check (`quote_authenticity`) turns green against Intel's PKI. **Done when:** all 5 checks pass on real TDX silicon and the evil agent still fails.
+### Phase 3 — Real TEE deploy on Phala Cloud (ready; one command)
+Agent image is built and public at `ghcr.io/sakthi-sundaram-r/veriform-agent`; deploy config is [`docker-compose.phala.yaml`](docker-compose.phala.yaml). After `phala login` + a $1 top-up, one script deploys → captures the real TDX quote → tears down:
+
+```bash
+bash scripts/deploy-tdx.sh
+```
+
+**Done when:** all 6 checks pass on real Intel TDX silicon (including `quote_authenticity` against Intel's PKI) and the evil agent still fails.
 
 ### Phase 4 — Demo polish (mostly done)
 - [x] Forged-quote toggle in the UI (`decision_binding` failure — quote and signature valid, binding caught)
@@ -150,7 +154,10 @@ Replace the dev shim with the real `phala simulator start` (Docker Desktop or a 
 - [x] Screenshots in the README ([docs/](docs/), all three modes)
 
 ### Phase 5 (stretch) — On-chain anchor
-Minimal contract on Base Sepolia storing the attested agent pubkey; a demo contract action gated on "signed by a verified enclave." **Done when:** a smart contract rejects the evil agent's signature on-chain.
+- [x] [`VeriformRegistry.sol`](contracts/VeriformRegistry.sol) — stores the attested agent key, verifies decision signatures via `ecrecover`
+- [x] [`DemoConsumer.sol`](contracts/DemoConsumer.sol) — a contract action gated on "signed by a verified enclave"
+- [x] Signature scheme proven ecrecover-compatible with the enclave key (3 tests in [`test_onchain.py`](tests/test_onchain.py))
+- [ ] Deploy to Base Sepolia (needs testnet ETH + connection)
 
 ### Phase 6 (stretch) — Multi-vendor attestation
 Require agreement across vendor roots (Intel/AMD/Nvidia) so no single PKI compromise breaks the guarantee.
