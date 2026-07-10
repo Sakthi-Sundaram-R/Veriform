@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .verify import verify_receipt
+from .verify import verify_receipt, verify_sequence
 
 app = FastAPI(title="Veriform Verifier")
 
@@ -66,3 +66,13 @@ def ask(req: AskRequest):
         quote=receipt.get("quote"),
     )
     return {"agent": req.agent, "receipt": receipt, "verification": verification}
+
+
+class SequenceRequest(BaseModel):
+    receipts: list[dict]
+
+
+@app.post("/verify-sequence")
+def verify_sequence_endpoint(req: SequenceRequest):
+    """Verify a full decision HISTORY: complete, ordered, and policy-compliant."""
+    return verify_sequence(req.receipts)

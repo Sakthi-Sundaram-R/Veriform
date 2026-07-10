@@ -17,6 +17,9 @@ Checks, in order:
      Intel attestation collateral). If PHALA_VERIFY_URL is set, defer to a
      full-DCAP endpoint that also checks the quote-body signature over
      report_data — the guarantee only unpatched real hardware provides.
+  6b. ledger link: this receipt's hash-chain link is well-formed and its
+     policy accumulator is within the daily limit. Full-history completeness
+     and ordering are verified across a sequence via verify_sequence().
 
 Any hard failure => REJECTED. Skipped checks are reported as skipped.
 """
@@ -48,8 +51,36 @@ EXPECTED_MRTD = os.environ.get("EXPECTED_MRTD", "").lower().removeprefix("0x")
 EXPECTED_SYSTEM_PROMPT_SHA256 = os.environ.get("EXPECTED_SYSTEM_PROMPT_SHA256", "").lower()
 
 
+ZERO_ROOT = "00" * 32
+
+
 def canonical_bytes(payload: dict) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _entry_hash(payload: dict) -> str:
+    """Hash of the decision core = payload minus its own ledger block."""
+    core = {k: v for k, v in payload.items() if k != "ledger"}
+    return hashlib.sha256(canonical_bytes(core)).hexdigest()
+
+
+def _ledger_link_ok(payload: dict) -> tuple[bool, str]:
+    """Verify a single receipt's ledger link: root = sha256(prev_root||entry)."""
+    led = payload.get("ledger")
+    if not led:
+        return False, "no ledger block"
+    e = _entry_hash(payload)
+    if e != led.get("entry_hash"):
+        return False, "entry_hash does not match the decision content"
+    try:
+        root = hashlib.sha256(
+            bytes.fromhex(led["prev_root"]) + bytes.fromhex(led["entry_hash"])
+        ).hexdigest()
+    except Exception:
+        return False, "malformed ledger roots"
+    if root != led.get("root"):
+        return False, "root != sha256(prev_root || entry_hash)"
+    return True, "ledger link intact"
 
 
 def expected_binding(payload: dict, address: str) -> bytes:
@@ -153,6 +184,14 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
     checks.append(prov)
     hard_fail |= prov["passed"] is False
 
+    # 6b. Ledger link: this receipt's hash-chain link is well-formed and its
+    #     policy accumulator is within the daily limit. (Full history
+    #     completeness/ordering is verified across a sequence — see
+    #     verify_sequence.)
+    led = _ledger_check(payload)
+    checks.append(led)
+    hard_fail |= led["passed"] is False
+
     # 7. Quote authenticity (real hardware attestation chain)
     if quote and not hard_fail:
         auth = _authenticity_check(quote)
@@ -164,6 +203,84 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         "verified": verified,
         "verdict": "VERIFIED" if verified else "REJECTED",
         "checks": checks,
+    }
+
+
+def _ledger_check(payload: dict) -> dict:
+    led = payload.get("ledger")
+    if not led:
+        return {"name": "ledger_link", "passed": None,
+                "detail": "no decision ledger on this receipt"}
+    ok, detail = _ledger_link_ok(payload)
+    if not ok:
+        return _check("ledger_link", False, detail)
+    # policy accumulator must be within the declared daily limit
+    try:
+        if float(led["daily_total"]) > float(led["daily_limit"]) + 1e-9:
+            return _check("ledger_link", False,
+                          f"daily_total {led['daily_total']} exceeds limit {led['daily_limit']}")
+    except Exception:
+        return _check("ledger_link", False, "malformed ledger accumulator")
+    return _check("ledger_link", True,
+                  f"chain link #{led.get('seq')} intact; "
+                  f"daily {led['daily_total']}/{led['daily_limit']} within limit")
+
+
+def verify_sequence(receipts: list[dict]) -> dict:
+    """Verify a full decision HISTORY: every receipt individually valid, the
+    hash chain is complete and correctly ordered (nothing dropped, reordered,
+    or inserted), and the cumulative daily invariant held at every step.
+
+    Each item: {"payload", "address", "signature", "quote"}.
+    """
+    findings = []
+    ok = True
+    prev_root = ZERO_ROOT
+    expected_seq = 1
+    running = {}  # day -> cumulative approved
+
+    for i, r in enumerate(receipts):
+        payload = r.get("payload", {})
+        # 1. each receipt must independently verify
+        single = verify_receipt(payload, r.get("address", ""),
+                                r.get("signature", ""), r.get("quote"))
+        if not single["verified"]:
+            ok = False
+            fails = [c["name"] for c in single["checks"] if c["passed"] is False]
+            findings.append(f"receipt #{i+1}: rejected ({', '.join(fails)})")
+            continue
+        led = payload.get("ledger", {})
+        # 2. ordering + completeness: prev_root chains, seq increments by 1
+        if led.get("prev_root") != prev_root:
+            ok = False
+            findings.append(
+                f"receipt #{i+1}: prev_root breaks the chain — a decision was "
+                "dropped, reordered, or inserted")
+        if led.get("seq") != expected_seq:
+            ok = False
+            findings.append(f"receipt #{i+1}: seq {led.get('seq')} != expected {expected_seq}")
+        # 3. cumulative invariant recomputed independently
+        day = led.get("day")
+        amt = float(payload.get("request", {}).get("amount", 0) or 0)
+        if payload.get("action") == "APPROVE":
+            running[day] = running.get(day, 0.0) + amt
+        if round(running.get(day, 0.0), 8) != round(float(led.get("daily_total", -1)), 8):
+            ok = False
+            findings.append(
+                f"receipt #{i+1}: claimed daily_total {led.get('daily_total')} != "
+                f"recomputed {round(running.get(day, 0.0), 8)}")
+        if running.get(day, 0.0) > float(led.get("daily_limit", 0)) + 1e-9:
+            ok = False
+            findings.append(f"receipt #{i+1}: cumulative approvals exceeded the daily limit")
+        prev_root = led.get("root")
+        expected_seq += 1
+
+    return {
+        "verified": ok,
+        "verdict": "HISTORY VERIFIED" if ok else "HISTORY REJECTED",
+        "count": len(receipts),
+        "final_root": prev_root,
+        "findings": findings or ["complete, ordered, and policy-compliant"],
     }
 
 

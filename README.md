@@ -105,6 +105,31 @@ The verifier's `inference_provenance` check then enforces two things:
 
 **Honest boundary:** this proves the model consulted, the criteria used, and faithful reporting are all under the enclave signature. The one thing it does *not* prove is that the remote provider's servers actually ran that model unmodified — that requires the provider to return its *own* attestation (confidential inference, e.g. TEE-hosted models). The `inference` block is designed to carry a `provider_attestation` when available; until then, provenance is anchored at the enclave that made the call.
 
+## Verifiable decision history (attested ledger)
+
+Every attestation elsewhere — including Veriform's own receipts above — is **point-in-time**: one quote proves one decision. But an autonomous agent makes a *sequence* of decisions over its life, and no consumable tool lets an outsider verify that whole history. Veriform's decision ledger does.
+
+Each decision is appended to a hash chain and carries a running policy accumulator, all bound into the signed, quote-anchored payload:
+
+```json
+"ledger": {
+  "seq": 3, "prev_root": "…", "entry_hash": "…", "root": "…",
+  "day": "2026-07-10", "daily_total": 4.0, "daily_limit": 5.0
+}
+```
+
+`POST /verify-sequence` with a list of receipts then proves three things no single quote can:
+
+- **Completeness** — every decision is present; dropping one breaks the chain (`root_n = sha256(root_{n-1} || entry_hash_n)`).
+- **Ordering** — none reordered or inserted (sequence numbers + chained roots).
+- **Cross-decision policy** — a cumulative invariant held at *every* step. In the demo, three 2.0-ETH transfers each pass the per-transfer limit, but the third is **denied by the ledger** because it would push the daily total past 5.0 — a policy no per-decision check can enforce and no single attestation can prove.
+
+Tampering is caught every way: drop a decision → broken chain + sequence gap + accumulator mismatch; lie about the running total → the verifier recomputes it independently and rejects.
+
+**Why this is (as far as I can tell) unsolved:** the building blocks exist in isolation — hash-chained logs (blockchains, Certificate Transparency), enclave rollback protection (the ROTE work, monotonic counters). What doesn't exist as a consumable thing is an **enclave-attested, third-party-verifiable agent decision ledger carrying semantic policy invariants**. That's Veriform's "make the proof consumable" thesis extended from one decision to the whole history.
+
+**Honest boundary:** the ledger is tamper-evident *within a presented sequence*. A malicious operator could still roll the enclave back to an earlier state and present a shorter or forked history. Defeating that needs the latest root anchored **outside** the enclave — a hardware monotonic counter, or periodically posting the root on-chain / to a transparency log (which is exactly what the on-chain anchor, Phase 5, is for). The ledger is designed to make that anchoring a one-line addition: you anchor `root`, and the whole history behind it becomes non-forkable.
+
 ## Quick start
 
 No TEE hardware needed — dstack ships a local simulator.
