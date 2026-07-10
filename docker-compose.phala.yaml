@@ -1,0 +1,26 @@
+# Phase 3: real-TEE deployment to Phala Cloud (Intel TDX).
+#
+#   docker build -t <registry>/veriform-agent:latest agent/
+#   docker push <registry>/veriform-agent:latest
+#   phala deploy -c docker-compose.phala.yaml -n veriform-agent \
+#     -e GEMINI_API_KEY=... --wait
+#
+# Only the agent runs in the enclave. The verifier runs anywhere —
+# that is the whole point of the receipt.
+
+services:
+  agent:
+    image: ${AGENT_IMAGE}
+    ports:
+      - "8001:8001"
+    environment:
+      - JUDGE_PROVIDER=${JUDGE_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-lite-latest}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MAX_TX_AMOUNT=${MAX_TX_AMOUNT:-5.0}
+      - TRUSTED_ADDRESSES=${TRUSTED_ADDRESSES:-0x1111111111111111111111111111111111111111}
+      - TRUSTED_AUTO_LIMIT=${TRUSTED_AUTO_LIMIT:-1.0}
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: unless-stopped
