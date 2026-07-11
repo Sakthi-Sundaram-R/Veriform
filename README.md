@@ -250,6 +250,10 @@ bash scripts/deploy-tdx.sh
 ### Phase 6 (stretch) — Multi-vendor attestation
 Require agreement across vendor roots (Intel/AMD/Nvidia) so no single PKI compromise breaks the guarantee.
 
+## Security
+
+Full trust model, per-check defense map, and honest boundaries: **[SECURITY.md](SECURITY.md)**. Short version — the operator (host, root, cloud admin) is untrusted; trust roots only in Intel's pinned PKI and the enclave attestation; the verifier trusts only mathematics. Every rejection is a real cryptographic failure, not a hardcoded check. What's explicitly *out* of scope: liveness/DoS, input confidentiality, remote-model execution, ledger rollback, and replay freshness — each documented with its intended mitigation.
+
 ## Why this matters
 
 Agents that handle funds, private data, or autonomous on-chain actions can *technically* be made verifiable today — but in practice no end user or contract can actually verify them without trusting the operator anyway. The trust gap has moved from the hardware up into the application layer. Veriform makes the invisible proof **visible, correct, and hard to fake**.
