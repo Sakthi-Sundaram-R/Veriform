@@ -49,6 +49,11 @@ EXPECTED_MRTD = os.environ.get("EXPECTED_MRTD", "").lower().removeprefix("0x")
 # LLM judgment used a different (e.g. backdoored) system prompt are rejected —
 # even from a genuine enclave running unaltered code.
 EXPECTED_SYSTEM_PROMPT_SHA256 = os.environ.get("EXPECTED_SYSTEM_PROMPT_SHA256", "").lower()
+# Pin the required consensus quorum. When set, an APPROVE is only accepted if at
+# least this many of this many judges voted APPROVE — so a compromised agent
+# can't lower its own threshold to let one rogue judge decide.
+EXPECTED_CONSENSUS_THRESHOLD = int(os.environ.get("EXPECTED_CONSENSUS_THRESHOLD", "0"))
+EXPECTED_CONSENSUS_TOTAL = int(os.environ.get("EXPECTED_CONSENSUS_TOTAL", "0"))
 
 
 ZERO_ROOT = "00" * 32
@@ -192,6 +197,13 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
     checks.append(led)
     hard_fail |= led["passed"] is False
 
+    # 6c. Consensus: for quorum-judged decisions, the final action genuinely
+    #     followed from the votes against the required threshold — no single
+    #     rogue judge decided it.
+    con = _consensus_check(payload)
+    checks.append(con)
+    hard_fail |= con["passed"] is False
+
     # 7. Quote authenticity (real hardware attestation chain)
     if quote and not hard_fail:
         auth = _authenticity_check(quote)
@@ -204,6 +216,41 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         "verdict": "VERIFIED" if verified else "REJECTED",
         "checks": checks,
     }
+
+
+def _consensus_check(payload: dict) -> dict:
+    con = payload.get("consensus")
+    if not con:
+        return {"name": "consensus", "passed": None,
+                "detail": "single-judge or rule-based decision — no quorum to verify"}
+    votes = con.get("votes", [])
+    if not votes:
+        return _check("consensus", False, "consensus block has no votes")
+    # Recompute approvals independently — the agent can't misreport the tally.
+    approvals = sum(1 for v in votes if v.get("action") == "APPROVE")
+    if approvals != con.get("approvals"):
+        return _check("consensus", False,
+                      f"claimed {con.get('approvals')} approvals but votes show {approvals}")
+    threshold = con.get("threshold")
+    total = con.get("total")
+    if total != len(votes):
+        return _check("consensus", False, f"claimed {total} judges but {len(votes)} votes present")
+    # Pin the required quorum so a compromised agent can't weaken its own bar.
+    if EXPECTED_CONSENSUS_THRESHOLD and threshold < EXPECTED_CONSENSUS_THRESHOLD:
+        return _check("consensus", False,
+                      f"threshold {threshold} is below the required {EXPECTED_CONSENSUS_THRESHOLD}")
+    if EXPECTED_CONSENSUS_TOTAL and total != EXPECTED_CONSENSUS_TOTAL:
+        return _check("consensus", False,
+                      f"judge count {total} != required {EXPECTED_CONSENSUS_TOTAL}")
+    # The final action must genuinely follow from the quorum rule.
+    expected = "APPROVE" if approvals >= threshold else "DENY"
+    if payload.get("action") != expected:
+        return _check("consensus", False,
+                      f"action {payload.get('action')} does not follow the quorum "
+                      f"({approvals}/{total} approvals, need {threshold})")
+    return _check("consensus", True,
+                  f"{approvals}/{total} judges approved (need {threshold}); "
+                  f"action follows the quorum — no single judge decided it")
 
 
 def _ledger_check(payload: dict) -> dict:

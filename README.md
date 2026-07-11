@@ -105,6 +105,27 @@ The verifier's `inference_provenance` check then enforces two things:
 
 **Honest boundary:** this proves the model consulted, the criteria used, and faithful reporting are all under the enclave signature. The one thing it does *not* prove is that the remote provider's servers actually ran that model unmodified — that requires the provider to return its *own* attestation (confidential inference, e.g. TEE-hosted models). The `inference` block is designed to carry a `provider_attestation` when available; until then, provenance is anchored at the enclave that made the call.
 
+## Attested consensus (no single model decides)
+
+The deepest unsolved question in the agent space: *why trust a **single** AI's judgment on something that moves money?* If that one model hallucinates, is compromised, or is backdoored, its lone "APPROVE" carries the decision.
+
+Veriform can require a **quorum of independent judges** and bind **every vote** into the receipt. Set `CONSENSUS=1` and the agent runs a panel — a real LLM plus independent rule-based evaluators (and more real models when you add keys) — and only approves if `CONSENSUS_THRESHOLD` of them agree:
+
+```json
+"consensus": {
+  "threshold": 2, "total": 3, "approvals": 1,
+  "votes": [
+    {"judge": "llm (gemini-flash-lite-latest)", "action": "DENY",    "reason": "…"},
+    {"judge": "scam-heuristic",                  "action": "DENY",    "reason": "…"},
+    {"judge": "amount-heuristic",                "action": "APPROVE", "reason": "(rogue judge)"}
+  ]
+}
+```
+
+The verifier's `consensus` check recomputes the tally, confirms the final action genuinely followed from the votes, and — with `EXPECTED_CONSENSUS_THRESHOLD` pinned — rejects any receipt where a compromised agent tried to lower its own bar. **Live result:** with one judge fully compromised to approve everything, a scam request is still **DENIED** (1/3, need 2) — the rogue judge cannot force an approval, and the proof is in the receipt.
+
+**Honest boundary:** this proves a quorum of the judges you *consulted* agreed and the action followed — it doesn't make any individual judge correct, and the judges must be genuinely independent (a shared failure mode defeats a quorum). Remote-model execution still needs a provider attestation (§inference). In the free demo the panel is 1 real LLM + 2 rule-based judges; adding Claude/Ollama keys makes it a true multi-model quorum.
+
 ## Full DCAP verification (real Intel silicon, verified offline)
 
 The default `quote_authenticity` check validates the Intel *certificate chain*. Veriform also implements **complete DCAP verification** — every signature in the chain of trust, done offline with no paid service ([`dcap.py`](verifier/app/dcap.py), `POST /verify-dcap`):

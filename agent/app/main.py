@@ -38,13 +38,14 @@ def decide_transfer(tx: TransferRequest):
     verdict = decide(request)
     action, method, notes = verdict["action"], verdict["method"], verdict["notes"]
     inference = verdict.get("inference")
+    consensus = verdict.get("consensus")
 
     # Cross-decision policy invariant: even if each transfer passes on its own,
     # a genuine APPROVE is overridden to DENY if it would breach the cumulative
-    # daily limit. This is a rules-level override, so it supersedes the LLM.
+    # daily limit. This is a rules-level override, so it supersedes the judges.
     amount = float(request.get("amount", 0) or 0)
     if action == "APPROVE" and LEDGER.would_breach(amount, action):
-        action, method, inference = "DENY", "rules", None
+        action, method, inference, consensus = "DENY", "rules", None, None
         notes = f"cumulative daily limit of {DAILY_LIMIT} would be exceeded"
 
     payload = {
@@ -60,6 +61,10 @@ def decide_transfer(tx: TransferRequest):
     # are all under the enclave signature.
     if inference is not None:
         payload["inference"] = inference
+    # Multi-judge consensus: bind every vote so a verifier can confirm the final
+    # action genuinely followed from a quorum (no single rogue judge decided it).
+    if consensus is not None:
+        payload["consensus"] = consensus
 
     # Append to the attested decision ledger and bind the ledger block into the
     # payload (so the whole history is quote-bound and verifiable as a chain).

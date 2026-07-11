@@ -32,6 +32,13 @@ TRUSTED_ADDRESSES = {
 }
 
 JUDGE_PROVIDER = os.environ.get("JUDGE_PROVIDER", "auto")
+# Multi-judge consensus: require CONSENSUS_THRESHOLD of the configured judges to
+# APPROVE, else DENY. Every judge's vote is bound into the receipt so a verifier
+# can confirm no single (rogue/hallucinating/backdoored) judge forced approval.
+CONSENSUS = os.environ.get("CONSENSUS", "").lower() in ("1", "true", "yes")
+CONSENSUS_THRESHOLD = int(os.environ.get("CONSENSUS_THRESHOLD", "2"))
+# One judge can be flagged rogue (always APPROVE) to demo single-model resistance.
+ROGUE_JUDGE = os.environ.get("ROGUE_JUDGE", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -82,6 +89,9 @@ def decide(tx: dict) -> dict:
         return _verdict("DENY", "rules", "no reason given for transfer")
     if to.lower() in TRUSTED_ADDRESSES and amount <= TRUSTED_AUTO_LIMIT:
         return _verdict("APPROVE", "rules", "trusted recipient within auto-limit")
+
+    if CONSENSUS:
+        return _run_consensus(tx)
 
     provider = _resolve_provider()
     if provider == "none":
@@ -212,10 +222,87 @@ _JUDGES = {
 }
 
 
-def _verdict(action: str, method: str, notes: str, inference: dict | None = None) -> dict:
+# --- Multi-judge consensus --------------------------------------------------
+# A "judge" is any independent evaluator returning (action, reason). Judges can
+# be LLMs (Claude/Gemini/Ollama) or rule-based; they are deliberately different
+# so they can disagree. The quorum makes "no single judge can approve alone" a
+# property the verifier can check.
+
+SCAM_WORDS = ("urgent", "giveaway", "double", "guaranteed", "act now",
+              "limited", "verify your", "seed phrase", "unlock", "claim now")
+LEGIT_WORDS = ("invoice", "rent", "salary", "refund", "subscription", "vendor")
+
+
+def _judge_llm(tx: dict):
+    """The nuanced judge: a real LLM if one is configured, else abstain (DENY)."""
+    provider = _resolve_provider()
+    if provider == "none":
+        return "DENY", "no LLM configured", "abstain"
+    try:
+        v = _JUDGES[provider](tx)
+        model = v.get("inference", {}).get("model", provider)
+        return v["action"], v["notes"], f"llm ({model})"
+    except Exception as exc:
+        return "DENY", f"LLM unavailable ({type(exc).__name__})", "llm"
+
+
+def _judge_scam(tx: dict):
+    """Independent heuristic: deny anything with scam/urgency language."""
+    reason = str(tx.get("reason", "")).lower()
+    if any(w in reason for w in SCAM_WORDS):
+        return "DENY", "reason contains scam/urgency language", "scam-heuristic"
+    if any(w in reason for w in LEGIT_WORDS):
+        return "APPROVE", "reason matches a legitimate payment pattern", "scam-heuristic"
+    return "DENY", "reason does not match a known-legitimate pattern", "scam-heuristic"
+
+
+def _judge_amount(tx: dict):
+    """Independent heuristic: conservative on larger amounts."""
+    try:
+        amount = float(tx.get("amount", 0))
+    except (TypeError, ValueError):
+        return "DENY", "amount not numeric", "amount-heuristic"
+    ceiling = 0.6 * MAX_TX_AMOUNT
+    if amount <= ceiling:
+        return "APPROVE", f"amount within conservative ceiling ({ceiling})", "amount-heuristic"
+    return "DENY", f"amount above conservative ceiling ({ceiling})", "amount-heuristic"
+
+
+CONSENSUS_JUDGES = [_judge_llm, _judge_scam, _judge_amount]
+
+
+def _run_consensus(tx: dict) -> dict:
+    votes = []
+    for judge in CONSENSUS_JUDGES:
+        try:
+            action, reason, name = judge(tx)
+        except Exception as exc:  # a judge crashing counts as a DENY vote
+            action, reason, name = "DENY", f"judge error: {type(exc).__name__}", "unknown"
+        if name == ROGUE_JUDGE:  # demo: this judge is compromised to always approve
+            action, reason = "APPROVE", "(rogue judge: approves everything)"
+        votes.append({"judge": name, "action": action, "reason": reason[:120]})
+
+    approvals = sum(1 for v in votes if v["action"] == "APPROVE")
+    final = "APPROVE" if approvals >= CONSENSUS_THRESHOLD else "DENY"
+    consensus = {
+        "threshold": CONSENSUS_THRESHOLD,
+        "total": len(votes),
+        "approvals": approvals,
+        "votes": votes,
+    }
+    notes = (f"{approvals}/{len(votes)} judges approved "
+             f"(need {CONSENSUS_THRESHOLD}) — quorum "
+             f"{'met' if final == 'APPROVE' else 'not met'}")
+    return _verdict(final, "consensus", notes, consensus=consensus)
+
+
+def _verdict(action: str, method: str, notes: str,
+             inference: dict | None = None, consensus: dict | None = None) -> dict:
     v = {"action": action, "method": method, "notes": notes}
     if inference is not None:
         v["inference"] = inference
+    if consensus is not None:
+        v["consensus"] = consensus
     return v
 
 

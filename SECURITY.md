@@ -52,6 +52,7 @@ rejection is for a real cryptographic reason — there is no hardcoded "if evil"
 | `signature` | **Tampered payload**, wrong signer | Signature over the canonical payload must recover to the attested key. |
 | `inference_provenance` | **Backdoored judgment prompt** in a genuine enclave; agent **lying about the model's output** | Judgment prompt hash must match the pinned audited one; action must match the model's actual output. |
 | `ledger_link` | A malformed history link; an over-limit accumulator on a single receipt | `root = sha256(prev_root ‖ entry_hash)`; `daily_total ≤ daily_limit`. |
+| `consensus` | A **single rogue/hallucinating/backdoored judge** forcing an approval; an agent lowering its own quorum bar or misreporting the tally | Verifier recomputes approvals, confirms the action follows the quorum rule, and enforces the pinned `EXPECTED_CONSENSUS_THRESHOLD`. |
 | `quote_authenticity` (chain) | Forged quotes with **no genuine Intel collateral** | PCK chain must root in the pinned Intel SGX Root CA. |
 | `quote_authenticity` (full DCAP, `FULL_DCAP=1`) | A quote whose **report was altered after the hardware signed it** | Full chain: Intel root → PCK → QE report → attestation key → TD report. Catches any post-signing modification. |
 
