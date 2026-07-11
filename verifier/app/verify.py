@@ -332,7 +332,26 @@ def _inference_provenance_check(payload: dict) -> dict:
     )
 
 
+FULL_DCAP = os.environ.get("FULL_DCAP", "").lower() in ("1", "true", "yes")
+
+
 def _authenticity_check(quote: str) -> dict:
+    # Strongest local check: full DCAP (every signature from Intel's root down
+    # to report_data). On real unpatched hardware this passes; on a
+    # simulator-served quote it correctly fails at the report signature, since
+    # the simulator rewrites report_data after the hardware signed it. Off by
+    # default so the simulator demo runs; turn on with FULL_DCAP=1 on real TDX.
+    if FULL_DCAP:
+        from . import dcap
+        res = dcap.verify_full_dcap(quote)
+        if res["ok"]:
+            return _check("quote_authenticity", True,
+                          "full DCAP verified — Intel root → PCK → QE → "
+                          "attestation key → this report")
+        first = next((c for c in res["checks"] if not c["passed"]), None)
+        return _check("quote_authenticity", False,
+                      f"full DCAP failed: {first['name'] if first else 'unknown'}")
+
     # An explicit endpoint (e.g. Phala on real hardware) does the strongest
     # check: full DCAP verification including the quote-body signature.
     if PHALA_VERIFY_URL:

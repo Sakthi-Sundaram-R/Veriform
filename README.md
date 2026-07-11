@@ -105,6 +105,30 @@ The verifier's `inference_provenance` check then enforces two things:
 
 **Honest boundary:** this proves the model consulted, the criteria used, and faithful reporting are all under the enclave signature. The one thing it does *not* prove is that the remote provider's servers actually ran that model unmodified — that requires the provider to return its *own* attestation (confidential inference, e.g. TEE-hosted models). The `inference` block is designed to carry a `provider_attestation` when available; until then, provenance is anchored at the enclave that made the call.
 
+## Full DCAP verification (real Intel silicon, verified offline)
+
+The default `quote_authenticity` check validates the Intel *certificate chain*. Veriform also implements **complete DCAP verification** — every signature in the chain of trust, done offline with no paid service ([`dcap.py`](verifier/app/dcap.py), `POST /verify-dcap`):
+
+```
+Intel SGX Root CA
+   └─signs→ PCK certificate
+              └─signs→ QE report
+                         └─binds→ attestation key
+                                    └─signs→ TD report  ──contains──► report_data
+```
+
+Verified against a **real TDX quote captured from genuine Intel hardware** (`tests/fixtures/real_tdx_quote.hex`), all five links pass:
+
+```
+PASS quote_format          TDX v4 quote
+PASS att_key_signs_report  attestation key's signature over the TD report is valid
+PASS qe_binds_att_key      QE report commits to the attestation key
+PASS pck_signs_qe          PCK certificate signed the QE report
+PASS chain_to_intel_root   PCK chain validates and roots in the Intel SGX Root CA
+```
+
+**This is the guarantee real silicon adds** — the `att_key_signs_report` check verifies the hardware's signature over the *entire* report including `report_data`. It's exactly what the simulator can't fake: the dstack simulator serves a real captured quote but rewrites `report_data` after capture, so full DCAP on a simulator quote **correctly fails** at `att_key_signs_report` (tampering with any byte of the signed report breaks it — proven in the tests). Set `FULL_DCAP=1` on a real-hardware deployment and the same six-check flow runs full DCAP end-to-end. The verifier's real-hardware path is thus built and proven; the only remaining step is producing a quote over *our own* `report_data` on live silicon — a deployment, not a capability.
+
 ## Verifiable decision history (attested ledger)
 
 Every attestation elsewhere — including Veriform's own receipts above — is **point-in-time**: one quote proves one decision. But an autonomous agent makes a *sequence* of decisions over its life, and no consumable tool lets an outsider verify that whole history. Veriform's decision ledger does.

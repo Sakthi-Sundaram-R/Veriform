@@ -76,3 +76,15 @@ class SequenceRequest(BaseModel):
 def verify_sequence_endpoint(req: SequenceRequest):
     """Verify a full decision HISTORY: complete, ordered, and policy-compliant."""
     return verify_sequence(req.receipts)
+
+
+class QuoteRequest(BaseModel):
+    quote: str
+
+
+@app.post("/verify-dcap")
+def verify_dcap_endpoint(req: QuoteRequest):
+    """Full Intel TDX DCAP verification of a raw quote — every signature from
+    Intel's Root CA down to report_data. Offline, no paid service."""
+    from .dcap import verify_full_dcap
+    return verify_full_dcap(req.quote)
