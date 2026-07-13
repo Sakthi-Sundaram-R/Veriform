@@ -1,0 +1,13 @@
+{
+  "network": "Ethereum Sepolia",
+  "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+  "deployer": "0xcD014f2D924E21ae9Bb73b378e945730538866b4",
+  "contracts": {
+    "VeriformRegistry": "0x5d0CeA3564a959959C04B4A9dDc0D6209ED3937C",
+    "DemoConsumer": "0x03Fb74db45e3a6282107393be73fC7D12147C6B2",
+    "AttestedQuoteConsumer": "0x6658DD646FaCc994bc358183F2c39FFfd25068b8"
+  },
+  "automata_dcap_verifier": "0x63eF330eAaadA189861144FCbc9176dae41A5BAf",
+  "gate_demo": "genuine enclave signature executed (approvedCount=1); evil signature reverted (UnverifiedDecision)",
+  "bytecode_confirmed": true
+}

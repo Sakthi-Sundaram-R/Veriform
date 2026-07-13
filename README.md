@@ -298,8 +298,14 @@ Two independent on-chain guarantees: the **signature** path (was the enclave key
 - [x] Signature scheme proven ecrecover-compatible with the enclave key (3 tests in [`test_onchain.py`](tests/test_onchain.py))
 - [x] **[`AttestedQuoteConsumer.sol`](contracts/AttestedQuoteConsumer.sol) — on-chain DCAP.** Gates an action on **both** (1) [Automata's on-chain DCAP verifier](https://github.com/automata-network/automata-dcap-attestation) accepting the quote (the full Intel chain of trust, enforced in the EVM against on-chain PCCS) and (2) the quote's `report_data` matching `sha256(decisionHash ‖ enclave)`, recomputed on-chain — identical to the enclave's binding. The byte-offset extraction and the on-chain binding recomputation are proven equivalent to the enclave and the off-chain verifier against the real hardware quote (6 tests in [`test_automata.py`](tests/test_automata.py)).
 - [x] **Free on-chain verification** — [`scripts/automata_verify.py`](scripts/automata_verify.py) simulates `verifyAndAttestOnChain` with `eth_call` (no wallet, no gas) against the deployed Automata contract (Ethereum Sepolia `0x63eF…5BAf` / Automata `0xd3A3…1483`). Live-tested end to end; a real deployed quote passes once its platform collateral is in the on-chain PCCS.
-- [x] **Deploy + gated-action demo, verified on a local EVM** — [`scripts/deploy_onchain.py`](scripts/deploy_onchain.py) compiles all three contracts with `solc 0.8.24` and, by default, deploys them to an in-memory chain (`eth-tester`, no gas/wallet/network) and runs the full gate: a genuine enclave signature **executes** on-chain, the evil agent's is **rejected** (`UnverifiedDecision`). Point the same script at a public testnet with `RPC_URL` + a throwaway `PRIVATE_KEY` to publish it.
-- [ ] Publish to a public testnet — get free Sepolia ETH from the [Google Cloud faucet](https://cloud.google.com/application/web3/faucet) (Google account, no card), then `RPC_URL=… PRIVATE_KEY=… python scripts/deploy_onchain.py`. Fully exercising `AttestedQuoteConsumer` additionally needs a real quote (Phase 3) + PCCS collateral.
+- [x] **Deploy + gated-action demo** — [`scripts/deploy_onchain.py`](scripts/deploy_onchain.py) compiles all three contracts with `solc 0.8.24` and deploys them (in-memory `eth-tester` by default, or a real chain with `RPC_URL` + `PRIVATE_KEY`), then runs the full gate: a genuine enclave signature **executes** on-chain, the evil agent's is **rejected** (`UnverifiedDecision`).
+- [x] **Published live to Ethereum Sepolia** ✅ — deployed and the on-chain gate verified on a public chain (genuine sig executes, impostor reverts):
+  | Contract | Address |
+  |---|---|
+  | VeriformRegistry | [`0x5d0CeA35…3937C`](https://sepolia.etherscan.io/address/0x5d0CeA3564a959959C04B4A9dDc0D6209ED3937C) |
+  | DemoConsumer | [`0x03Fb74db…C6B2`](https://sepolia.etherscan.io/address/0x03Fb74db45e3a6282107393be73fC7D12147C6B2) |
+  | AttestedQuoteConsumer | [`0x6658DD64…68b8`](https://sepolia.etherscan.io/address/0x6658DD646FaCc994bc358183F2c39FFfd25068b8) |
+- [ ] Fully exercise `AttestedQuoteConsumer` on-chain (deployed above) — additionally needs the live quote's platform collateral upserted to Automata's on-chain PCCS.
 
 ### Phase 6 (stretch) — Multi-vendor attestation
 Require agreement across vendor roots (Intel/AMD/Nvidia) so no single PKI compromise breaks the guarantee.

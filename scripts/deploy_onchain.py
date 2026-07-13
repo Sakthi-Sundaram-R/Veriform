@@ -32,6 +32,14 @@ from eth_account.messages import encode_defunct
 from eth_hash.auto import keccak
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Load RPC_URL / PRIVATE_KEY / AGENT_KEY from .env if present (it is gitignored).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
 CONTRACTS = ROOT / "contracts"
 SOLC_VERSION = "0.8.24"
 
