@@ -1,0 +1,8 @@
+# Tooling for the on-chain scripts (scripts/deploy_onchain.py, automata_verify.py).
+# Not needed to run the agent/verifier or the pytest suite — install only to
+# compile/deploy the contracts or verify a quote on-chain.
+#   pip install -r scripts/requirements-onchain.txt
+web3>=7.0
+py-solc-x>=2.0
+eth-tester>=0.11
+py-evm>=0.10
