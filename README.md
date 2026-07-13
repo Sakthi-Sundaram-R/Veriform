@@ -261,6 +261,8 @@ bash scripts/tdx-quote.sh
 
 It generates a real quote over a live decision, verifies the full Intel chain of trust ([full DCAP](#full-dcap-verification-real-intel-silicon-verified-offline)) plus decision binding, and writes the proof to `docs/phase3-real-quote{.hex,-proof.json}`. A `c3-standard-4` costs ~cents for the ~5 minutes this takes, and GCP's $300 free trial (verifiable with card, **PayPal, or bank account**) covers it — so the cost is $0.
 
+Don't have a TDX VM? You don't need your own — **[`docs/PHASE3-HELPER.md`](docs/PHASE3-HELPER.md)** is a single self-checking block anyone with TDX hardware can paste and send back. The proof is self-standing (a real Intel DCAP chain over our decision), and the doc shows how to independently re-verify the returned quote locally.
+
 **Phala Cloud path.** Agent image is public at `ghcr.io/sakthi-sundaram-r/veriform-agent`; deploy config is [`docker-compose.phala.yaml`](docker-compose.phala.yaml). After `phala login` + a $1 top-up, one script deploys → captures the real TDX quote → tears down:
 
 ```bash
