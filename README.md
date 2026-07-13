@@ -277,10 +277,14 @@ bash scripts/deploy-tdx.sh
 - [x] Screenshots in the README ([docs/](docs/), all three modes)
 
 ### Phase 5 (stretch) — On-chain anchor
+Two independent on-chain guarantees: the **signature** path (was the enclave key the signer?) and the **hardware** path (was the quote genuine Intel TDX?).
+
 - [x] [`VeriformRegistry.sol`](contracts/VeriformRegistry.sol) — stores the attested agent key, verifies decision signatures via `ecrecover`
 - [x] [`DemoConsumer.sol`](contracts/DemoConsumer.sol) — a contract action gated on "signed by a verified enclave"
 - [x] Signature scheme proven ecrecover-compatible with the enclave key (3 tests in [`test_onchain.py`](tests/test_onchain.py))
-- [ ] Deploy to Base Sepolia (needs testnet ETH + connection)
+- [x] **[`AttestedQuoteConsumer.sol`](contracts/AttestedQuoteConsumer.sol) — on-chain DCAP.** Gates an action on **both** (1) [Automata's on-chain DCAP verifier](https://github.com/automata-network/automata-dcap-attestation) accepting the quote (the full Intel chain of trust, enforced in the EVM against on-chain PCCS) and (2) the quote's `report_data` matching `sha256(decisionHash ‖ enclave)`, recomputed on-chain — identical to the enclave's binding. The byte-offset extraction and the on-chain binding recomputation are proven equivalent to the enclave and the off-chain verifier against the real hardware quote (6 tests in [`test_automata.py`](tests/test_automata.py)).
+- [x] **Free on-chain verification** — [`scripts/automata_verify.py`](scripts/automata_verify.py) simulates `verifyAndAttestOnChain` with `eth_call` (no wallet, no gas) against the deployed Automata contract (Ethereum Sepolia `0x63eF…5BAf` / Automata `0xd3A3…1483`). Live-tested end to end; a real deployed quote passes once its platform collateral is in the on-chain PCCS.
+- [ ] Deploy `AttestedQuoteConsumer` + upsert PCCS collateral and record one attestation on-chain (needs testnet ETH)
 
 ### Phase 6 (stretch) — Multi-vendor attestation
 Require agreement across vendor roots (Intel/AMD/Nvidia) so no single PKI compromise breaks the guarantee.
