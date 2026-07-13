@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#0a0e14; --bg2:#0d1520; --ink:#e8eef7; --muted:#8aa0b8;
-    --accent:#22c55e; --accent2:#38bdf8; --line:#1c2836; --danger:#f43f5e;
+    --accent:#22c55e; --accent2:#38bdf8; --line:#1c2836;
   }
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{height:100%}
@@ -16,7 +16,9 @@
     font-family:"Segoe UI",Inter,system-ui,-apple-system,Arial,sans-serif;
     -webkit-font-smoothing:antialiased; overflow:hidden;
   }
-  .deck{height:100vh; width:100vw; overflow:hidden; position:relative}
+  #net{position:fixed; inset:0; z-index:0; opacity:.55}
+  .deck{height:100vh; width:100vw; overflow:hidden; position:relative; z-index:1}
+
   .slide{
     position:absolute; inset:0; display:flex; flex-direction:column;
     justify-content:center; align-items:center; text-align:center;
@@ -25,122 +27,129 @@
     background:
       radial-gradient(1200px 600px at 50% -10%, rgba(56,189,248,.10), transparent 60%),
       radial-gradient(900px 500px at 50% 110%, rgba(34,197,94,.10), transparent 60%),
-      linear-gradient(180deg,var(--bg),var(--bg2));
+      linear-gradient(180deg,rgba(10,14,20,.72),rgba(13,21,32,.86));
   }
   .slide.active{opacity:1; transform:scale(1); pointer-events:auto}
 
-  .kicker{
-    letter-spacing:.42em; text-transform:uppercase; font-size:clamp(11px,1.5vw,17px);
-    color:var(--accent2); font-weight:700; margin-bottom:2.5vh;
-  }
-  .logo{
-    font-size:clamp(54px,13vw,190px); font-weight:900; letter-spacing:-.03em;
-    line-height:.95;
-    background:linear-gradient(180deg,#fff,#9fb4cc);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-  }
-  .tagline{
-    font-size:clamp(22px,4vw,56px); font-weight:800; margin-top:3vh;
-    color:var(--accent);
-  }
-  .sub{
-    font-size:clamp(15px,2.1vw,26px); color:var(--muted); margin-top:2.5vh;
-    max-width:22ch; line-height:1.45;
-  }
-  .badge{
-    display:inline-flex; gap:.6ch; align-items:center; margin-top:4vh;
-    border:1px solid var(--line); border-radius:999px; padding:.7em 1.4em;
-    font-size:clamp(12px,1.5vw,18px); color:var(--muted); background:rgba(255,255,255,.02);
-  }
-  .badge b{color:var(--ink)}
-  .dot{width:.6em; height:.6em; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent)}
+  /* --- entrance animations (retrigger when a slide becomes .active) --- */
+  @keyframes fadeUp{from{opacity:0; transform:translateY(26px)} to{opacity:1; transform:none}}
+  @keyframes slideL{from{opacity:0; transform:translateX(-26px)} to{opacity:1; transform:none}}
+  @keyframes shimmer{to{background-position:200% center}}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.45)} 70%{box-shadow:0 0 0 20px rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+  @keyframes scan{0%{top:-8%; opacity:0} 8%{opacity:.9} 92%{opacity:.9} 100%{top:108%; opacity:0}}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @keyframes glow{0%,100%{filter:drop-shadow(0 0 6px rgba(34,197,94,.4))} 50%{filter:drop-shadow(0 0 22px rgba(34,197,94,.85))}}
 
-  /* slide 2 — two columns */
+  .slide .anim{opacity:0}
+  .slide.active .anim{animation:fadeUp .7s cubic-bezier(.2,.7,.2,1) forwards}
+  .slide.active .d1{animation-delay:.05s}
+  .slide.active .d2{animation-delay:.20s}
+  .slide.active .d3{animation-delay:.35s}
+  .slide.active .d4{animation-delay:.50s}
+
+  /* verification scan line, sweeps once when slide opens */
+  .scan{position:absolute; left:0; right:0; height:3px; pointer-events:none; opacity:0;
+    background:linear-gradient(90deg,transparent,var(--accent2),var(--accent),transparent);
+    box-shadow:0 0 22px var(--accent2); filter:blur(.3px)}
+  .slide.active .scan{animation:scan 1.9s ease-in-out .1s 1}
+
+  .kicker{letter-spacing:.42em; text-transform:uppercase; font-size:clamp(11px,1.5vw,17px);
+    color:var(--accent2); font-weight:700; margin-bottom:2.5vh}
+  .logo{
+    font-size:clamp(54px,13vw,190px); font-weight:900; letter-spacing:-.03em; line-height:.95;
+    background:linear-gradient(100deg,#7f97b3 0%,#ffffff 40%,#ffffff 60%,#7f97b3 100%);
+    background-size:200% auto; -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .slide.active .logo{animation:fadeUp .7s cubic-bezier(.2,.7,.2,1) forwards, shimmer 3.4s linear .7s infinite}
+  .tagline{font-size:clamp(22px,4vw,56px); font-weight:800; margin-top:3vh; color:var(--accent)}
+  .sub{font-size:clamp(15px,2.1vw,26px); color:var(--muted); margin-top:2.5vh; max-width:24ch; line-height:1.45}
+  .badge{display:inline-flex; gap:.6ch; align-items:center; margin-top:4vh;
+    border:1px solid var(--line); border-radius:999px; padding:.7em 1.4em;
+    font-size:clamp(12px,1.5vw,18px); color:var(--muted); background:rgba(255,255,255,.02)}
+  .badge b{color:var(--ink)}
+  .dot{width:.62em; height:.62em; border-radius:50%; background:var(--accent); animation:pulse 2s infinite}
+
+  /* slide 2 */
   .h2{font-size:clamp(24px,4vw,52px); font-weight:900; margin-bottom:1vh}
   .h2 .u{color:var(--accent)}
-  .cols{
-    display:grid; grid-template-columns:1fr 1fr; gap:clamp(24px,5vw,80px);
-    margin-top:4vh; width:100%; max-width:1200px; text-align:left;
-  }
-  .col h3{
-    font-size:clamp(13px,1.5vw,18px); letter-spacing:.2em; text-transform:uppercase;
-    color:var(--accent2); margin-bottom:2vh; font-weight:800;
-  }
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:clamp(24px,5vw,80px);
+    margin-top:4vh; width:100%; max-width:1200px; text-align:left}
+  .col h3{font-size:clamp(13px,1.5vw,18px); letter-spacing:.2em; text-transform:uppercase;
+    color:var(--accent2); margin-bottom:2vh; font-weight:800}
   .col.feat h3{color:var(--accent)}
   .col ul{list-style:none}
-  .col li{
-    font-size:clamp(15px,1.9vw,25px); padding:.55em 0; color:var(--ink);
+  .col li{font-size:clamp(15px,1.9vw,25px); padding:.55em 0; color:var(--ink);
     display:flex; gap:.7ch; align-items:flex-start; line-height:1.3;
-    border-bottom:1px solid rgba(255,255,255,.05);
-  }
+    border-bottom:1px solid rgba(255,255,255,.05); opacity:0}
+  .slide.active .col li{animation:slideL .55s ease forwards}
   .col li::before{content:"▸"; color:var(--accent2); font-weight:900; flex:none}
   .col.feat li::before{content:"✓"; color:var(--accent)}
   .col li b{color:#fff}
 
-  /* end card */
+  /* slide 3 — end */
+  .check{width:clamp(90px,14vw,150px); height:clamp(90px,14vw,150px); margin-bottom:3vh}
+  .check circle{fill:none; stroke:var(--accent2); stroke-width:5; stroke-dasharray:295; stroke-dashoffset:295}
+  .check path{fill:none; stroke:var(--accent); stroke-width:8; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:80; stroke-dashoffset:80}
+  .slide.active .check{animation:glow 2.4s ease-in-out .9s infinite}
+  .slide.active .check circle{animation:draw .7s ease .2s forwards}
+  .slide.active .check path{animation:draw .5s ease .7s forwards}
   .end-tag{font-size:clamp(30px,6vw,84px); font-weight:900; letter-spacing:-.02em}
   .end-tag .g{color:var(--accent)}
-  .links{margin-top:5vh; display:flex; flex-direction:column; gap:2.2vh}
-  .link{
-    display:flex; gap:1ch; align-items:center; justify-content:center;
-    font-size:clamp(16px,2.4vw,32px); font-weight:700;
-  }
+  .links{margin-top:4vh; display:flex; flex-direction:column; gap:2.2vh}
+  .link{display:flex; gap:1ch; align-items:center; justify-content:center; font-size:clamp(16px,2.4vw,32px); font-weight:700}
   .link .ic{font-size:1.1em}
   .link .mono{font-family:"Cascadia Code",Consolas,monospace; color:var(--accent2)}
-  .proofline{
-    margin-top:5vh; font-size:clamp(14px,1.9vw,24px); color:var(--muted);
-    display:flex; gap:1.5ch; flex-wrap:wrap; justify-content:center;
-  }
+  .proofline{margin-top:4vh; font-size:clamp(14px,1.9vw,24px); color:var(--muted);
+    display:flex; gap:1.5ch; flex-wrap:wrap; justify-content:center}
   .proofline b{color:var(--accent)}
 
-  /* nav */
-  .nav{
-    position:fixed; bottom:3vh; left:50%; transform:translateX(-50%);
-    display:flex; gap:12px; z-index:10;
-  }
+  .nav{position:fixed; bottom:3vh; left:50%; transform:translateX(-50%); display:flex; gap:12px; z-index:10}
   .nav i{width:11px; height:11px; border-radius:50%; background:#2a3a4d; cursor:pointer; transition:.3s}
   .nav i.on{background:var(--accent); width:30px; border-radius:6px}
-  .hint{
-    position:fixed; bottom:3vh; right:3vw; color:#54687e; font-size:14px; z-index:10;
-  }
+  .hint{position:fixed; bottom:3vh; right:3vw; color:#54687e; font-size:14px; z-index:10}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
 <body>
+<canvas id="net"></canvas>
 <div class="deck" id="deck">
 
   <!-- CARD 1 — TITLE -->
   <section class="slide active">
-    <div class="kicker">Verifiable AI Agents</div>
+    <div class="scan"></div>
+    <div class="kicker anim d1">Verifiable AI Agents</div>
     <div class="logo">VERIFORM</div>
-    <div class="tagline">Proof, not blind trust.</div>
-    <div class="sub">Verify an AI agent's decision in seconds — for humans <em>and</em> smart contracts.</div>
-    <div class="badge"><span class="dot"></span>&nbsp;Verified on <b>real Intel&nbsp;TDX</b> · Live <b>on-chain</b></div>
+    <div class="tagline anim d2">Proof, not blind trust.</div>
+    <div class="sub anim d3">Verify an AI agent's decision in seconds — for humans <em>and</em> smart contracts.</div>
+    <div class="badge anim d4"><span class="dot"></span>&nbsp;Verified on <b>real Intel&nbsp;TDX</b> · Live <b>on-chain</b></div>
   </section>
 
   <!-- CARD 2 — STACK & FEATURES -->
   <section class="slide">
-    <div class="h2">Built with <span class="u">real</span> attestation</div>
+    <div class="scan"></div>
+    <div class="h2 anim d1">Built with <span class="u">real</span> attestation</div>
     <div class="cols">
       <div class="col">
-        <h3>The Stack</h3>
+        <h3 class="anim d2">The Stack</h3>
         <ul>
-          <li><b>Phala dstack</b> · Intel TDX enclave</li>
-          <li><b>Python</b> · FastAPI agent</li>
-          <li>LLM judge · <b>Gemini / Claude / Ollama</b></li>
-          <li><b>secp256k1</b> · Intel <b>DCAP</b> chain of trust</li>
-          <li><b>React</b> verifier UI</li>
-          <li><b>Solidity</b> · Automata · Ethereum Sepolia</li>
+          <li style="animation-delay:.15s"><b>Phala dstack</b> · Intel TDX enclave</li>
+          <li style="animation-delay:.25s"><b>Python</b> · FastAPI agent</li>
+          <li style="animation-delay:.35s">LLM judge · <b>Gemini / Claude / Ollama</b></li>
+          <li style="animation-delay:.45s"><b>secp256k1</b> · Intel <b>DCAP</b> chain of trust</li>
+          <li style="animation-delay:.55s"><b>React</b> verifier UI</li>
+          <li style="animation-delay:.65s"><b>Solidity</b> · Automata · Ethereum Sepolia</li>
         </ul>
       </div>
       <div class="col feat">
-        <h3>What It Proves</h3>
+        <h3 class="anim d2">What It Proves</h3>
         <ul>
-          <li><b>8 cryptographic checks</b> per decision</li>
-          <li>Attested <b>inference provenance</b></li>
-          <li>Verifiable <b>decision ledger</b></li>
-          <li>Multi-judge <b>consensus</b></li>
-          <li><b>4 attacks</b>, each caught differently</li>
-          <li><b>63 tests</b> · real silicon · live on-chain</li>
+          <li style="animation-delay:.20s"><b>8 cryptographic checks</b> per decision</li>
+          <li style="animation-delay:.30s">Attested <b>inference provenance</b></li>
+          <li style="animation-delay:.40s">Verifiable <b>decision ledger</b></li>
+          <li style="animation-delay:.50s">Multi-judge <b>consensus</b></li>
+          <li style="animation-delay:.60s"><b>4 attacks</b>, each caught differently</li>
+          <li style="animation-delay:.70s"><b>63 tests</b> · real silicon · live on-chain</li>
         </ul>
       </div>
     </div>
@@ -148,12 +157,13 @@
 
   <!-- CARD 3 — END -->
   <section class="slide">
-    <div class="end-tag">Proof, not <span class="g">blind trust.</span></div>
+    <svg class="check" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47"/><path d="M28 52 l16 16 l30 -34"/></svg>
+    <div class="end-tag anim d1">Proof, not <span class="g">blind trust.</span></div>
     <div class="links">
-      <div class="link"><span class="ic">⭐</span> <span class="mono">github.com/Sakthi-Sundaram-R/Veriform</span></div>
-      <div class="link"><span class="ic">⛓️</span> Live on Sepolia · <span class="mono">0x6658…68b8</span></div>
+      <div class="link anim d2"><span class="ic">⭐</span> <span class="mono">github.com/Sakthi-Sundaram-R/Veriform</span></div>
+      <div class="link anim d3"><span class="ic">⛓️</span> Live on Sepolia · <span class="mono">0x6658…68b8</span></div>
     </div>
-    <div class="proofline"><span><b>✓</b> Real Intel TDX</span><span><b>✓</b> Full Intel DCAP</span><span><b>✓</b> Verified on-chain</span></div>
+    <div class="proofline anim d4"><span><b>✓</b> Real Intel TDX</span><span><b>✓</b> Full Intel DCAP</span><span><b>✓</b> Verified on-chain</span></div>
   </section>
 
 </div>
@@ -162,14 +172,14 @@
 <div class="hint">← → or Space to move · F11 fullscreen</div>
 
 <script>
+  /* ---- slide navigation ---- */
   const slides=[...document.querySelectorAll('.slide')];
-  const nav=document.getElementById('nav');
-  let i=0;
-  slides.forEach((_,k)=>{const d=document.createElement('i'); d.onclick=()=>go(k); nav.appendChild(d);});
+  const nav=document.getElementById('nav'); let i=0;
+  slides.forEach((_,k)=>{const d=document.createElement('i'); d.onclick=e=>{e.stopPropagation();go(k);}; nav.appendChild(d);});
   const dots=[...nav.children];
   function go(n){
     i=Math.max(0,Math.min(slides.length-1,n));
-    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    slides.forEach((s,k)=>{ s.classList.remove('active'); if(k===i){ void s.offsetWidth; s.classList.add('active'); }});
     dots.forEach((d,k)=>d.classList.toggle('on',k===i));
   }
   document.addEventListener('keydown',e=>{
@@ -179,12 +189,35 @@
   document.addEventListener('click',e=>{ if(!e.target.closest('.nav')) go(i+1); });
   go(0);
 
-  // Auto-hide nav + hint so they don't show on the recording (reappear on move).
-  const ui=[document.getElementById('nav'),document.querySelector('.hint')];
-  let t; const show=()=>{ui.forEach(el=>el.style.opacity='1'); clearTimeout(t);
-    t=setTimeout(()=>ui.forEach(el=>el.style.opacity='0'),2500);};
+  /* ---- auto-hide UI so it stays clean on a recording ---- */
+  const ui=[nav,document.querySelector('.hint')]; let ht;
+  const showUI=()=>{ui.forEach(el=>el.style.opacity='1'); clearTimeout(ht); ht=setTimeout(()=>ui.forEach(el=>el.style.opacity='0'),2500);};
   ui.forEach(el=>el.style.transition='opacity .6s');
-  document.addEventListener('mousemove',show); document.addEventListener('keydown',show); show();
+  addEventListener('mousemove',showUI); addEventListener('keydown',showUI); showUI();
+
+  /* ---- background: a slow "network of trust" (attestation / consensus / on-chain) ---- */
+  const cv=document.getElementById('net'), cx=cv.getContext('2d'); let W,H,P;
+  function size(){W=cv.width=innerWidth; H=cv.height=innerHeight;
+    const n=Math.min(64,Math.floor(W*H/26000));
+    P=Array.from({length:n},()=>({x:Math.random()*W,y:Math.random()*H,
+      vx:(Math.random()-.5)*.28,vy:(Math.random()-.5)*.28}));}
+  size(); addEventListener('resize',size);
+  function loop(){
+    cx.clearRect(0,0,W,H);
+    for(const p of P){p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0||p.x>W)p.vx*=-1; if(p.y<0||p.y>H)p.vy*=-1;}
+    for(let a=0;a<P.length;a++){
+      for(let b=a+1;b<P.length;b++){
+        const dx=P[a].x-P[b].x, dy=P[a].y-P[b].y, d=Math.hypot(dx,dy);
+        if(d<150){cx.strokeStyle='rgba(56,189,248,'+(.16*(1-d/150))+')'; cx.lineWidth=1;
+          cx.beginPath(); cx.moveTo(P[a].x,P[a].y); cx.lineTo(P[b].x,P[b].y); cx.stroke();}
+      }
+      cx.fillStyle='rgba(34,197,94,.55)'; cx.beginPath();
+      cx.arc(P[a].x,P[a].y,1.7,0,7); cx.fill();
+    }
+    requestAnimationFrame(loop);
+  }
+  loop();
 </script>
 </body>
 </html>
