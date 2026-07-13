@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "network": "Phala Cloud, Intel TDX tdx.small, node prod9 US-WEST-1",
+  "cvm_uuid": "54b4c81d-6802-4058-9961-5dff7a64189e",
+  "app_id": "5fa4f8951a132c6eefff967a8227aca90e8dc0c4",
+  "address": "0xEEeba6E20b068A68eCFCB4f95128b2B346D39929",
+  "action": "APPROVE",
+  "quote_bytes": 5010,
+  "full_dcap": "all 5 links PASS",
+  "decision_binding": "PASS",
+  "checks": [
+    "quote_format",
+    "att_key_signs_report",
+    "qe_binds_att_key",
+    "pck_signs_qe",
+    "chain_to_intel_root",
+    "decision_binding"
+  ]
+}

@@ -247,8 +247,22 @@ This runs $0 on a GCP/Azure free trial. Or deploy the container to Phala Cloud w
 ### Phase 1 — Official simulator run ✅ DONE
 Validated against the **official Phala dstack simulator** (v0.5.3). `phala simulator start` refuses to run on Windows and ships no Windows binary, so the Linux (musl) simulator runs inside a ~3.5 MB Alpine WSL2 distro, reachable from Windows over TCP — see [`scripts/run-official-sim-windows.sh`](scripts/run-official-sim-windows.sh). The honest agent's receipt **VERIFIES** with a real 5006-byte TDX quote ([proof](docs/phase1-official-sim-proof.json)): `quote_present`, `quote_structure`, `enclave_measurement` (real MRTD pinned), `decision_binding`, and `signature` all pass; only `quote_authenticity` is skipped (needs real hardware + Intel PKI, i.e. Phase 3). Evil agents still rejected. This proves the binding scheme, byte offsets, and measurement pinning are correct against the genuine dstack quote format — not just the dev shim.
 
-### Phase 3 — Real TEE quote on live silicon (ready; one command)
-Everything technical is built and proven; all that remains is running on a real Intel TDX box to produce a genuine quote over *our own* `report_data`. There are two ways to do it — the free one needs no Phala account and no Docker.
+### Phase 3 — Real TEE quote on live silicon ✅ DONE
+**Completed on Phala Cloud Intel TDX** (node prod9, US-WEST-1, `tdx.small`). The agent was deployed to a real TDX CVM, sent a live decision, and returned a genuine **5010-byte TDX v4 quote** signed by the enclave key over *our own* `report_data`. Run through the verifier, **all five DCAP links plus decision binding pass** — including `att_key_signs_report`, the one only real, unpatched silicon can satisfy:
+
+```
+[PASS] quote_format          TDX v4 quote
+[PASS] att_key_signs_report  hardware signed the TD report over our report_data
+[PASS] qe_binds_att_key      QE report commits to the attestation key
+[PASS] pck_signs_qe          PCK certificate signed the QE report
+[PASS] chain_to_intel_root   roots in the Intel SGX Root CA
+[PASS] decision_binding      report_data commits to our decision (APPROVE, rent)
+```
+
+The quote is preserved at [`tests/fixtures/live_tdx_quote.hex`](tests/fixtures/live_tdx_quote.hex) with a regression test ([`test_phase3_live.py`](tests/test_phase3_live.py)) and the proof at `docs/phase3-real-quote-proof.json`. Two reproducible paths below.
+
+**Free path — any Intel TDX VM ($0 on a GCP/Azure free trial).**
+The agent can generate a quote via the generic Linux TDX interface (`/sys/kernel/config/tsm/report`) with `QUOTE_BACKEND=tsm` — no Phala, no dstack, no Docker. One script does the whole thing:
 
 **Free path — any Intel TDX VM ($0 on a GCP/Azure free trial).**
 The agent can generate a quote via the generic Linux TDX interface (`/sys/kernel/config/tsm/report`) with `QUOTE_BACKEND=tsm` — no Phala, no dstack, no Docker. One script does the whole thing:

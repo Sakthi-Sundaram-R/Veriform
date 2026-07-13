@@ -66,17 +66,15 @@ Mode: **🎭 Evil (forged quote)**. Click.
   the primitive. What's missing is the layer between a raw attestation quote
   and a human or contract who needs to trust it in ten seconds. That
   verification UX layer is Veriform.
-- **"What's real hardware vs simulated here?"** — The local quote already
-  carries a *real* captured Intel PCK certificate chain, so `quote_authenticity`
-  validates against Intel's genuine PKI **offline and for free** — that's not
-  faked. And full DCAP (every signature from Intel's Root CA down to the
-  report_data) is proven in our test suite against a real captured hardware
-  quote. The one thing only live silicon adds is a quote body *re-signed* over
-  *our own* report_data — and that's now a single command
-  (`bash scripts/tdx-quote.sh`) on any Intel TDX VM via the generic Linux TSM
-  interface, no Phala or Docker required. We're careful about this boundary: we
-  claim "validates genuine Intel PKI," not "runs on Intel silicon," until that
-  command runs.
+- **"What's real hardware vs simulated here?"** — Both. Locally the demo uses a
+  simulator quote (which still carries a *real* Intel PCK cert chain, so
+  `quote_authenticity` validates against genuine Intel PKI for free). But we also
+  **deployed the agent to real Intel TDX on Phala Cloud** and got back a genuine
+  quote our enclave signed over *our own* decision — full DCAP passes end to end,
+  including `att_key_signs_report`, which only real unpatched silicon can satisfy
+  (a simulator patches report_data after capture and fails there). That live
+  quote is checked into the repo with a regression test
+  ([`tests/fixtures/live_tdx_quote.hex`](tests/fixtures/live_tdx_quote.hex)).
 - **"Could a smart contract check this, not just your UI?"** — Yes, and it's
   built. `AttestedQuoteConsumer.sol` gates an on-chain action on *both*
   Automata's on-chain DCAP verifier accepting the quote (the full Intel chain
