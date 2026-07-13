@@ -55,7 +55,8 @@ Mode: **🎭 Evil (forged quote)**. Click.
 
 > "Every decision this agent makes ships with a receipt anyone can verify
 > in seconds — a user, an auditor, or a smart contract. Proof, not blind
-> trust."
+> trust. The same quote a human reads here, a smart contract can verify
+> on-chain — and proving it on live Intel silicon is one command away."
 
 ---
 
@@ -65,11 +66,28 @@ Mode: **🎭 Evil (forged quote)**. Click.
   the primitive. What's missing is the layer between a raw attestation quote
   and a human or contract who needs to trust it in ten seconds. That
   verification UX layer is Veriform.
-- **"What's real hardware vs simulated here?"** — Locally the quotes come
-  from the dstack simulator (structurally identical, no hardware chain);
-  deployed on Phala Cloud the same unmodified container gets genuine Intel
-  TDX quotes and the fifth check (`quote_authenticity`) verifies against
-  Intel's PKI.
+- **"What's real hardware vs simulated here?"** — The local quote already
+  carries a *real* captured Intel PCK certificate chain, so `quote_authenticity`
+  validates against Intel's genuine PKI **offline and for free** — that's not
+  faked. And full DCAP (every signature from Intel's Root CA down to the
+  report_data) is proven in our test suite against a real captured hardware
+  quote. The one thing only live silicon adds is a quote body *re-signed* over
+  *our own* report_data — and that's now a single command
+  (`bash scripts/tdx-quote.sh`) on any Intel TDX VM via the generic Linux TSM
+  interface, no Phala or Docker required. We're careful about this boundary: we
+  claim "validates genuine Intel PKI," not "runs on Intel silicon," until that
+  command runs.
+- **"Could a smart contract check this, not just your UI?"** — Yes, and it's
+  built. `AttestedQuoteConsumer.sol` gates an on-chain action on *both*
+  Automata's on-chain DCAP verifier accepting the quote (the full Intel chain
+  of trust, enforced in the EVM) *and* the quote's report_data matching the
+  decision — recomputed on-chain to match the enclave's binding exactly. You
+  can even verify a quote against the deployed Automata contract for free, with
+  no gas, via `scripts/automata_verify.py` (an `eth_call` simulation).
+- **"Is this just a point-in-time check?"** — No — receipts also chain into a
+  tamper-evident decision *ledger* with cumulative-limit invariants, and the
+  judgment can require a *quorum* of independent judges. Drop or reorder a past
+  decision and verification catches it; no single model can force an approval.
 - **"What if the LLM provider goes down?"** — The judgment layer fails
   closed: outage means DENY, and even that denial is a verified receipt.
   The judge brain is pluggable (Claude / Gemini / local Ollama); the
