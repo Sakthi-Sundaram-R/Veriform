@@ -212,17 +212,16 @@ powershell -ExecutionPolicy Bypass -File scripts\run-local.ps1
 
 It reads `GEMINI_API_KEY` from `.env` (free tier) and falls back to rules-only judging if absent.
 
-### Deploy to a real TEE
+### Real Intel TDX silicon
 
-Same container, real Intel TDX silicon:
+No Phala or Docker needed — on any Intel TDX VM (GCP `c3-standard`, Azure `DCesv6`, kernel ≥ 6.7), one command produces a genuine quote over a real decision and verifies the full chain of trust:
 
 ```bash
-phala auth login
-phala deploy -c docker-compose.yaml -n veriform-agent
-phala cvms attestation <cvm-id>    # genuine hardware quote
+git clone https://github.com/Sakthi-Sundaram-R/Veriform.git && cd Veriform
+bash scripts/tdx-quote.sh    # QUOTE_BACKEND=tsm under the hood
 ```
 
-Point the verifier at the deployed URL — the ✅ is now backed by real hardware attestation.
+This runs $0 on a GCP/Azure free trial. Or deploy the container to Phala Cloud with `bash scripts/deploy-tdx.sh`. Either way the ✅ is now backed by real hardware attestation — see [Phase 3](#phase-3--real-tee-quote-on-live-silicon-ready-one-command).
 
 ## Architecture & stack
 
@@ -248,14 +247,27 @@ Point the verifier at the deployed URL — the ✅ is now backed by real hardwar
 ### Phase 1 — Official simulator run ✅ DONE
 Validated against the **official Phala dstack simulator** (v0.5.3). `phala simulator start` refuses to run on Windows and ships no Windows binary, so the Linux (musl) simulator runs inside a ~3.5 MB Alpine WSL2 distro, reachable from Windows over TCP — see [`scripts/run-official-sim-windows.sh`](scripts/run-official-sim-windows.sh). The honest agent's receipt **VERIFIES** with a real 5006-byte TDX quote ([proof](docs/phase1-official-sim-proof.json)): `quote_present`, `quote_structure`, `enclave_measurement` (real MRTD pinned), `decision_binding`, and `signature` all pass; only `quote_authenticity` is skipped (needs real hardware + Intel PKI, i.e. Phase 3). Evil agents still rejected. This proves the binding scheme, byte offsets, and measurement pinning are correct against the genuine dstack quote format — not just the dev shim.
 
-### Phase 3 — Real TEE deploy on Phala Cloud (ready; one command)
-Agent image is built and public at `ghcr.io/sakthi-sundaram-r/veriform-agent`; deploy config is [`docker-compose.phala.yaml`](docker-compose.phala.yaml). After `phala login` + a $1 top-up, one script deploys → captures the real TDX quote → tears down:
+### Phase 3 — Real TEE quote on live silicon (ready; one command)
+Everything technical is built and proven; all that remains is running on a real Intel TDX box to produce a genuine quote over *our own* `report_data`. There are two ways to do it — the free one needs no Phala account and no Docker.
+
+**Free path — any Intel TDX VM ($0 on a GCP/Azure free trial).**
+The agent can generate a quote via the generic Linux TDX interface (`/sys/kernel/config/tsm/report`) with `QUOTE_BACKEND=tsm` — no Phala, no dstack, no Docker. One script does the whole thing:
+
+```bash
+# on any Intel TDX guest (GCP c3-standard, Azure DCesv6, kernel >= 6.7):
+git clone https://github.com/Sakthi-Sundaram-R/Veriform.git && cd Veriform
+bash scripts/tdx-quote.sh
+```
+
+It generates a real quote over a live decision, verifies the full Intel chain of trust ([full DCAP](#full-dcap-verification-real-intel-silicon-verified-offline)) plus decision binding, and writes the proof to `docs/phase3-real-quote{.hex,-proof.json}`. A `c3-standard-4` costs ~cents for the ~5 minutes this takes, and GCP's $300 free trial (verifiable with card, **PayPal, or bank account**) covers it — so the cost is $0.
+
+**Phala Cloud path.** Agent image is public at `ghcr.io/sakthi-sundaram-r/veriform-agent`; deploy config is [`docker-compose.phala.yaml`](docker-compose.phala.yaml). After `phala login` + a $1 top-up, one script deploys → captures the real TDX quote → tears down:
 
 ```bash
 bash scripts/deploy-tdx.sh
 ```
 
-**Done when:** all 6 checks pass on real Intel TDX silicon (including `quote_authenticity` against Intel's PKI) and the evil agent still fails.
+**Done when:** the full chain of trust (`att_key_signs_report` and every DCAP link) passes over our own `report_data` on real Intel TDX silicon, and the evil agent still fails.
 
 ### Phase 4 — Demo polish (mostly done)
 - [x] Forged-quote toggle in the UI (`decision_binding` failure — quote and signature valid, binding caught)
