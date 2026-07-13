@@ -37,7 +37,9 @@ python3 -m venv .venv-tdx
 # shellcheck disable=SC1091
 . .venv-tdx/bin/activate
 pip install -q --upgrade pip
-pip install -q eth-account cryptography
+# eth-account (enclave signing), cryptography (dcap chain checks),
+# httpx (verify.py imports it at module load).
+pip install -q eth-account cryptography httpx
 
 echo "==> Generating a real TDX quote over our decision and verifying it…"
 QUOTE_BACKEND=tsm python3 scripts/_tdx_quote.py

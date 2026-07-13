@@ -31,9 +31,8 @@ SEED = os.environ.get("SIM_SEED", "veriform-dev-shim").encode()
 
 # A real captured TDX quote (Intel-signed chain + real MRTD). report_data is the
 # last 64 bytes of the TD report body: absolute offset 568..632.
-BASE_QUOTE = bytes.fromhex(
-    open(os.path.join(os.path.dirname(__file__), "base_quote.hex")).read().strip()
-)
+with open(os.path.join(os.path.dirname(__file__), "base_quote.hex")) as _f:
+    BASE_QUOTE = bytes.fromhex(_f.read().strip())
 REPORT_DATA_OFFSET = 568
 REPORT_DATA_END = 632
 
