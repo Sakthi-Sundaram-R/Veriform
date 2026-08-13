@@ -51,6 +51,7 @@ rejection is for a real cryptographic reason — there is no hardcoded "if evil"
 | `decision_binding` | **Altering the decision**, or **replaying** a quote for a different decision | `report_data` must equal `sha256(decision_hash ‖ address)`. |
 | `signature` | **Tampered payload**, wrong signer | Signature over the canonical payload must recover to the attested key. |
 | `inference_provenance` | **Backdoored judgment prompt** in a genuine enclave; agent **lying about the model's output**; **disabling the judge** to strip the evidence | Judgment prompt hash must match the pinned audited one; action must match the model's actual output. When a prompt is pinned, an APPROVE carrying **no** `inference` block is rejected outright — otherwise `JUDGE_PROVIDER=none` would sidestep the pin instead of failing it. |
+| `freshness` | **Replaying** a genuine, still-valid receipt long after it was issued | The signed timestamp must fall inside the pinned `MAX_RECEIPT_AGE_SECONDS` window (and not be future-dated beyond `FUTURE_SKEW_TOLERANCE_SECONDS`). The timestamp is covered by the signature and `report_data`, so a replayer cannot re-date it. Unset ⇒ skipped, and receipts stay valid indefinitely. |
 | `ledger_link` | A malformed history link; an over-limit accumulator on a single receipt | `root = sha256(prev_root ‖ entry_hash)`; `daily_total ≤ daily_limit`. |
 | `consensus` | A **single rogue/hallucinating/backdoored judge** forcing an approval; an agent lowering its own quorum bar, misreporting the tally, or **omitting the quorum entirely** | Verifier recomputes approvals, confirms the action follows the quorum rule, and enforces the pinned `EXPECTED_CONSENSUS_THRESHOLD`. When a quorum is pinned, an APPROVE carrying **no** `consensus` block is rejected — omission is not an easier path around the pin than weakening it. |
 | `quote_authenticity` (chain) | Forged quotes with **no genuine Intel collateral** | PCK chain must root in the pinned Intel SGX Root CA. |
@@ -111,10 +112,17 @@ is part of the guarantee.
    transparency log. The ledger is built so this anchoring is a one-line
    addition.
 
-5. **Replay / freshness.** A receipt is currently valid indefinitely — an old
-   valid "APPROVE" could be replayed. Mitigation (a per-decision nonce +
-   expiry, or the ledger sequence as a monotonic guard) is a known, not-yet-
-   implemented gap.
+5. **Replay — bounded, not eliminated.** The `freshness` check caps how long a
+   receipt stays acceptable (`MAX_RECEIPT_AGE_SECONDS`), so a captured
+   "APPROVE" can no longer be replayed indefinitely. Two limits remain. Within
+   the window a receipt is still **re-presentable**: making it single-use needs
+   caller-side state (remember `(address, ledger.seq)` and reject a repeat) or a
+   per-decision nonce echoed by the relying party — neither is implemented,
+   because `verify_receipt` is deliberately a pure function and an auditor must
+   be able to re-verify the same receipt without it failing the second time.
+   And the enclave's clock is host-influenced, so a **future-dated** receipt is
+   only caught beyond `FUTURE_SKEW_TOLERANCE_SECONDS`; a trusted time source
+   inside the enclave would close that.
 
 6. **Binding our own decision on live silicon.** The verifier's full-DCAP path
    is **built and proven** against a real hardware quote. Producing a quote over
