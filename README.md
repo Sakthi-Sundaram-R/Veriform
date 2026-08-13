@@ -264,9 +264,6 @@ The quote is preserved at [`tests/fixtures/live_tdx_quote.hex`](tests/fixtures/l
 **Free path — any Intel TDX VM ($0 on a GCP/Azure free trial).**
 The agent can generate a quote via the generic Linux TDX interface (`/sys/kernel/config/tsm/report`) with `QUOTE_BACKEND=tsm` — no Phala, no dstack, no Docker. One script does the whole thing:
 
-**Free path — any Intel TDX VM ($0 on a GCP/Azure free trial).**
-The agent can generate a quote via the generic Linux TDX interface (`/sys/kernel/config/tsm/report`) with `QUOTE_BACKEND=tsm` — no Phala, no dstack, no Docker. One script does the whole thing:
-
 ```bash
 # on any Intel TDX guest (GCP c3-standard, Azure DCesv6, kernel >= 6.7):
 git clone https://github.com/Sakthi-Sundaram-R/Veriform.git && cd Veriform
