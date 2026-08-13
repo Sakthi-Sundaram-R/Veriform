@@ -61,3 +61,19 @@ def test_pinned_threshold_blocks_weakening(monkeypatch):
 def test_non_consensus_decision_skipped():
     r = V._consensus_check({"action": "APPROVE", "request": {}})
     assert r["passed"] is None
+
+
+def test_denial_without_consensus_still_skipped_when_pinned(monkeypatch):
+    # A DENY approved nothing — a pinned quorum must not reject it.
+    monkeypatch.setattr(V, "EXPECTED_CONSENSUS_THRESHOLD", 2)
+    r = V._consensus_check({"action": "DENY", "request": {}})
+    assert r["passed"] is None
+
+
+def test_omitted_consensus_on_approve_rejected_when_pinned(monkeypatch):
+    # Weakening the threshold is already caught above; omitting the block
+    # entirely must not be an easier way around the same pin.
+    monkeypatch.setattr(V, "EXPECTED_CONSENSUS_THRESHOLD", 2)
+    r = V._consensus_check({"action": "APPROVE", "request": {}})
+    assert r["passed"] is False
+    assert "not quorum-judged" in r["detail"]

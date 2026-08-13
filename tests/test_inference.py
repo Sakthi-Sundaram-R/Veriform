@@ -25,9 +25,27 @@ def payload(action="APPROVE", model_action="APPROVE", prompt_sha=AUDITED, with_i
 
 
 def test_rules_decision_has_no_inference(monkeypatch):
-    monkeypatch.setattr(V, "EXPECTED_SYSTEM_PROMPT_SHA256", AUDITED)
+    monkeypatch.setattr(V, "EXPECTED_SYSTEM_PROMPT_SHA256", "")
     r = V._inference_provenance_check(payload(with_inference=False))
-    assert r["passed"] is None  # skipped — nothing to attest
+    assert r["passed"] is None  # skipped — nothing pinned, nothing to attest
+
+
+def test_rules_denial_still_skipped_when_pinned(monkeypatch):
+    # A hard rule denial never reaches the judge. It approved nothing, so a
+    # pinned prompt must not turn it into a rejected receipt.
+    monkeypatch.setattr(V, "EXPECTED_SYSTEM_PROMPT_SHA256", AUDITED)
+    r = V._inference_provenance_check(payload(action="DENY", with_inference=False))
+    assert r["passed"] is None
+
+
+def test_omitted_inference_on_approve_rejected_when_pinned(monkeypatch):
+    # The downgrade path: an operator flips JUDGE_PROVIDER=none and lets a
+    # self-serving TRUSTED_ADDRESSES entry produce a rules-only APPROVE. With
+    # the audited prompt pinned, the missing block must fail — not skip.
+    monkeypatch.setattr(V, "EXPECTED_SYSTEM_PROMPT_SHA256", AUDITED)
+    r = V._inference_provenance_check(payload(action="APPROVE", with_inference=False))
+    assert r["passed"] is False
+    assert "audited criteria" in r["detail"]
 
 
 def test_audited_prompt_passes(monkeypatch):

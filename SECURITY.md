@@ -50,9 +50,9 @@ rejection is for a real cryptographic reason — there is no hardcoded "if evil"
 | `enclave_measurement` | **Different (backdoored) code** in a genuine enclave | Quote's `MRTD` must equal the pinned known-good build. |
 | `decision_binding` | **Altering the decision**, or **replaying** a quote for a different decision | `report_data` must equal `sha256(decision_hash ‖ address)`. |
 | `signature` | **Tampered payload**, wrong signer | Signature over the canonical payload must recover to the attested key. |
-| `inference_provenance` | **Backdoored judgment prompt** in a genuine enclave; agent **lying about the model's output** | Judgment prompt hash must match the pinned audited one; action must match the model's actual output. |
+| `inference_provenance` | **Backdoored judgment prompt** in a genuine enclave; agent **lying about the model's output**; **disabling the judge** to strip the evidence | Judgment prompt hash must match the pinned audited one; action must match the model's actual output. When a prompt is pinned, an APPROVE carrying **no** `inference` block is rejected outright — otherwise `JUDGE_PROVIDER=none` would sidestep the pin instead of failing it. |
 | `ledger_link` | A malformed history link; an over-limit accumulator on a single receipt | `root = sha256(prev_root ‖ entry_hash)`; `daily_total ≤ daily_limit`. |
-| `consensus` | A **single rogue/hallucinating/backdoored judge** forcing an approval; an agent lowering its own quorum bar or misreporting the tally | Verifier recomputes approvals, confirms the action follows the quorum rule, and enforces the pinned `EXPECTED_CONSENSUS_THRESHOLD`. |
+| `consensus` | A **single rogue/hallucinating/backdoored judge** forcing an approval; an agent lowering its own quorum bar, misreporting the tally, or **omitting the quorum entirely** | Verifier recomputes approvals, confirms the action follows the quorum rule, and enforces the pinned `EXPECTED_CONSENSUS_THRESHOLD`. When a quorum is pinned, an APPROVE carrying **no** `consensus` block is rejected — omission is not an easier path around the pin than weakening it. |
 | `quote_authenticity` (chain) | Forged quotes with **no genuine Intel collateral** | PCK chain must root in the pinned Intel SGX Root CA. |
 | `quote_authenticity` (full DCAP, `FULL_DCAP=1`) | A quote whose **report was altered after the hardware signed it** | Full chain: Intel root → PCK → QE report → attestation key → TD report. Catches any post-signing modification. |
 
@@ -73,6 +73,7 @@ rejection is for a real cryptographic reason — there is no hardcoded "if evil"
 | Agent runs outside the enclave, no quote | `quote_present` |
 | Agent forges a structurally valid but fake quote | `decision_binding` (+ `enclave_measurement`) |
 | Genuine enclave, valid quote & signature, but **backdoored judgment prompt** | `inference_provenance` |
+| Genuine enclave; operator disables the judge (`JUDGE_PROVIDER=none`) and self-approves via `TRUSTED_ADDRESSES`, emitting an APPROVE with **no** provenance block | `inference_provenance` / `consensus` omission rule |
 | Decision payload altered after signing | `decision_binding` + `signature` |
 | Signature from a non-enclave key | `signature` |
 | A decision **dropped** from the history | ledger completeness |
