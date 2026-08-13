@@ -11,7 +11,10 @@ Checks, in order:
   5b. inference provenance: for LLM-judged decisions, the judgment prompt
      matches the audited one (pinned) and the agent reported the model's
      output faithfully — catches a backdoored judgment prompt even in a
-     genuine enclave
+     genuine enclave. When a prompt hash (or a consensus quorum) is pinned,
+     an APPROVE that simply OMITS the corresponding block is rejected too —
+     otherwise disabling the judge would strip the evidence rather than fail
+     the check. Denials are exempt: they approved nothing.
   6. quote authenticity: by default, verify the quote's Intel PCK certificate
      chain roots in the Intel SGX Root CA (free, offline — proves genuine
      Intel attestation collateral). If PHALA_VERIFY_URL is set, defer to a
@@ -221,6 +224,20 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
 def _consensus_check(payload: dict) -> dict:
     con = payload.get("consensus")
     if not con:
+        # A pinned quorum is a policy statement: "no approval without a quorum".
+        # Treating an ABSENT block as merely skipped would let an operator who
+        # controls the agent's env (CONSENSUS off, plus a self-serving
+        # TRUSTED_ADDRESSES) emit a rules-only APPROVE that sidesteps the pin
+        # entirely. Only approvals are gated — a DENY approved nothing, and
+        # hard rule denials legitimately never reach the judges.
+        if (EXPECTED_CONSENSUS_THRESHOLD or EXPECTED_CONSENSUS_TOTAL) \
+                and payload.get("action") == "APPROVE":
+            return _check(
+                "consensus", False,
+                "no consensus block on an APPROVE, but a quorum is pinned "
+                f"(threshold {EXPECTED_CONSENSUS_THRESHOLD}, judges {EXPECTED_CONSENSUS_TOTAL}) "
+                "— this approval was not quorum-judged",
+            )
         return {"name": "consensus", "passed": None,
                 "detail": "single-judge or rule-based decision — no quorum to verify"}
     votes = con.get("votes", [])
@@ -344,6 +361,16 @@ def _inference_provenance_check(payload: dict) -> dict:
     """
     inf = payload.get("inference")
     if not inf:
+        # Same reasoning as the consensus check: a pinned prompt hash means
+        # "no approval except under the audited criteria". If an absent block
+        # only skipped, switching JUDGE_PROVIDER=none would strip the evidence
+        # instead of failing the check. Gated on APPROVE only.
+        if EXPECTED_SYSTEM_PROMPT_SHA256 and payload.get("action") == "APPROVE":
+            return _check(
+                "inference_provenance", False,
+                "no inference block on an APPROVE, but an audited judgment prompt "
+                "is pinned — this approval was not judged under the audited criteria",
+            )
         return {
             "name": "inference_provenance",
             "passed": None,
