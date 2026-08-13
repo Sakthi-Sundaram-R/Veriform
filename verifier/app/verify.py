@@ -8,6 +8,12 @@ Checks, in order:
   4. report_data inside the quote matches sha256(decision_hash || address)
      — proves THIS decision was bound inside THE enclave
   5. signature over the canonical payload recovers to the claimed address
+  5c. freshness: the signed timestamp is inside the pinned expiry window
+     (skipped when MAX_RECEIPT_AGE_SECONDS is unset). The timestamp is covered
+     by the signature and report_data, so a replayed receipt cannot be re-dated
+     — capping its age is what stops an old APPROVE being presented as current.
+     Not applied when verifying a history via verify_sequence, whose entries are
+     retrospective by design.
   5b. inference provenance: for LLM-judged decisions, the judgment prompt
      matches the audited one (pinned) and the agent reported the model's
      output faithfully — catches a backdoored judgment prompt even in a
@@ -30,6 +36,7 @@ Any hard failure => REJECTED. Skipped checks are reported as skipped.
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 
 import httpx
 from eth_account import Account
@@ -57,6 +64,16 @@ EXPECTED_SYSTEM_PROMPT_SHA256 = os.environ.get("EXPECTED_SYSTEM_PROMPT_SHA256", 
 # can't lower its own threshold to let one rogue judge decide.
 EXPECTED_CONSENSUS_THRESHOLD = int(os.environ.get("EXPECTED_CONSENSUS_THRESHOLD", "0"))
 EXPECTED_CONSENSUS_TOTAL = int(os.environ.get("EXPECTED_CONSENSUS_TOTAL", "0"))
+# Bound how long a receipt stays acceptable, in seconds. A signed, quote-bound
+# APPROVE is otherwise valid forever, so anyone who has seen one can present it
+# again later and it still verifies. The timestamp is inside the signed payload
+# and committed to by report_data, so a replayer cannot refresh it — capping the
+# age is what turns "valid forever" into "valid for a window".
+# Unset => skipped, and receipts remain replayable.
+MAX_RECEIPT_AGE_SECONDS = int(os.environ.get("MAX_RECEIPT_AGE_SECONDS", "0"))
+# Allowance for honest clock drift between the enclave and the verifier before a
+# future-dated receipt is treated as pre-minted.
+FUTURE_SKEW_TOLERANCE_SECONDS = int(os.environ.get("FUTURE_SKEW_TOLERANCE_SECONDS", "60"))
 
 
 ZERO_ROOT = "00" * 32
@@ -96,7 +113,15 @@ def expected_binding(payload: dict, address: str) -> bytes:
     return hashlib.sha256(decision_hash + address.lower().encode()).digest()
 
 
-def verify_receipt(payload: dict, address: str, signature: str, quote: str | None) -> dict:
+def verify_receipt(payload: dict, address: str, signature: str, quote: str | None,
+                   check_freshness: bool = True) -> dict:
+    """Verify a single receipt.
+
+    `check_freshness` exists for verify_sequence: a decision HISTORY is
+    retrospective by nature, so its older entries are legitimately past any
+    freshness window. Ordering and completeness are what guard a sequence
+    against replay; the age cap guards a receipt presented on its own.
+    """
     checks = []
     hard_fail = False
 
@@ -186,6 +211,13 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         checks.append(_check("signature", False, f"signature invalid: {exc}"))
         hard_fail = True
 
+    # 5c. Freshness: bound how long this receipt stays acceptable, so a captured
+    #     APPROVE cannot be replayed indefinitely.
+    if check_freshness:
+        fresh = _freshness_check(payload)
+        checks.append(fresh)
+        hard_fail |= fresh["passed"] is False
+
     # 6. Inference provenance (for LLM-judged decisions): the judgment criteria
     #    match the audited prompt, and the agent reported the model faithfully.
     prov = _inference_provenance_check(payload)
@@ -219,6 +251,48 @@ def verify_receipt(payload: dict, address: str, signature: str, quote: str | Non
         "verdict": "VERIFIED" if verified else "REJECTED",
         "checks": checks,
     }
+
+
+def _freshness_check(payload: dict) -> dict:
+    """Bound the replay window using the signed timestamp.
+
+    The timestamp lives inside the payload, so it is covered by the signature
+    and by report_data. A replayer can present an old receipt unchanged, but
+    cannot re-date it without breaking both — which is precisely why an age cap
+    works here. This does not make a receipt single-use; it caps how long a
+    captured one stays useful. Single-use needs caller-side state (see
+    verify_sequence for the ordering guarantees across a presented history).
+    """
+    if not MAX_RECEIPT_AGE_SECONDS:
+        return {"name": "freshness", "passed": None,
+                "detail": "skipped — no expiry pinned; this receipt is valid "
+                          "indefinitely (set MAX_RECEIPT_AGE_SECONDS to bound replay)"}
+    raw = payload.get("timestamp")
+    if not raw:
+        # Same rule as the other pins: a pinned policy plus a missing field is a
+        # failure, never a skip — otherwise dropping the field evades the policy.
+        return _check("freshness", False,
+                      "no timestamp on the receipt, but an expiry is pinned — "
+                      "age cannot be established")
+    try:
+        ts = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return _check("freshness", False, f"timestamp is not ISO-8601: {str(raw)[:40]!r}")
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    age = (datetime.now(timezone.utc) - ts).total_seconds()
+    if age > MAX_RECEIPT_AGE_SECONDS:
+        return _check("freshness", False,
+                      f"receipt is {int(age)}s old, past the {MAX_RECEIPT_AGE_SECONDS}s "
+                      "limit — stale or replayed")
+    if age < -FUTURE_SKEW_TOLERANCE_SECONDS:
+        return _check("freshness", False,
+                      f"receipt is dated {int(-age)}s in the future — clock skew "
+                      "beyond tolerance, or a pre-minted receipt")
+    return _check("freshness", True,
+                  f"receipt is {max(int(age), 0)}s old, within the "
+                  f"{MAX_RECEIPT_AGE_SECONDS}s freshness window")
 
 
 def _consensus_check(payload: dict) -> dict:
@@ -306,8 +380,12 @@ def verify_sequence(receipts: list[dict]) -> dict:
     for i, r in enumerate(receipts):
         payload = r.get("payload", {})
         # 1. each receipt must independently verify
+        # Freshness is deliberately not applied here: a history is retrospective,
+        # and its older entries are legitimately outside any age window. Replay
+        # within a sequence is caught by the chain and sequence checks below.
         single = verify_receipt(payload, r.get("address", ""),
-                                r.get("signature", ""), r.get("quote"))
+                                r.get("signature", ""), r.get("quote"),
+                                check_freshness=False)
         if not single["verified"]:
             ok = False
             fails = [c["name"] for c in single["checks"] if c["passed"] is False]
